@@ -1,0 +1,91 @@
+name: Linux Service Smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-service-smoke-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify user systemd is available
+        shell: bash
+        run: |
+          set -euo pipefail
+          systemctl --user show-environment >/dev/null
+      - name: Build smoke binary and fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          go build -trimpath -o codexify-go ./cmd/codexify-go
+          cat > fake-tunnel.py <<'PY'
+          #!/usr/bin/env python3
+          import argparse
+          import http.server
+          import pathlib
+
+          parser = argparse.ArgumentParser(add_help=False)
+          parser.add_argument("command")
+          parser.add_argument("--health.url-file", dest="health_file", required=True)
+          args, _ = parser.parse_known_args()
+          if args.command != "run":
+              raise SystemExit(2)
+          server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), http.server.SimpleHTTPRequestHandler)
+          pathlib.Path(args.health_file).write_text(f"http://127.0.0.1:{server.server_port}/\n", encoding="utf-8")
+          server.serve_forever()
+          PY
+          chmod +x fake-tunnel.py
+          python3 - <<'PY'
+          import json
+          import pathlib
+
+          root = pathlib.Path.cwd()
+          cfg = json.loads((root / "config.example.json").read_text(encoding="utf-8-sig"))
+          cfg["service"]["name"] = "CodexifyGoCISmoke"
+          cfg["log"]["file"] = str(root / ".smoke" / "codexify.log")
+          cfg["mcp"]["workspaceRoot"] = str(root)
+          cfg["mcp"]["authEnabled"] = False
+          cfg["tunnel"]["executable"] = str(root / "fake-tunnel.py")
+          cfg["tunnel"]["tunnelId"] = "tunnel_ci_smoke"
+          cfg["tunnel"]["apiKeyRef"] = "literal:ci-smoke"
+          cfg["tunnel"]["mcpServerUrl"] = "http://127.0.0.1:33300/mcp/tunnel_ci_smoke"
+          cfg["tunnel"]["healthUrlFile"] = str(root / ".smoke" / "health.url")
+          cfg["supervisor"]["healthInterval"] = "500ms"
+          cfg["supervisor"]["shutdownTimeout"] = "3s"
+          (root / "smoke.config.json").write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+          PY
+      - name: Exercise systemd user service lifecycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          cleanup() {
+            ./codexify-go service stop --config smoke.config.json >/dev/null 2>&1 || true
+            ./codexify-go service remove --config smoke.config.json >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          ./codexify-go service install --config smoke.config.json
+          ./codexify-go service start --config smoke.config.json
+          ./codexify-go service status --config smoke.config.json | tee /tmp/status-started.txt
+          grep -q 'running' /tmp/status-started.txt
+          ./codexify-go service restart --config smoke.config.json
+          ./codexify-go service status --config smoke.config.json | tee /tmp/status-restarted.txt
+          grep -q 'running' /tmp/status-restarted.txt
+          ./codexify-go service stop --config smoke.config.json
+          ./codexify-go service status --config smoke.config.json | tee /tmp/status-stopped.txt
+          grep -q 'stopped' /tmp/status-stopped.txt
+          ./codexify-go service remove --config smoke.config.json
+          ./codexify-go service status --config smoke.config.json | tee /tmp/status-removed.txt
+          grep -q 'not installed' /tmp/status-removed.txt
+          trap - EXIT

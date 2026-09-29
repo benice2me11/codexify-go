@@ -81,3 +81,20 @@ jobs:
           if [[ "${{ matrix.goos }}" == windows ]]; then ext=.exe; fi
           CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
             go build -trimpath -o "codexify-go${ext}" ./cmd/codexify-go
+
+  required:
+    name: required
+    if: always()
+    needs: [test, race, cross-build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify required CI jobs
+        env:
+          TEST_RESULT: ${{ needs.test.result }}
+          RACE_RESULT: ${{ needs.race.result }}
+          CROSS_BUILD_RESULT: ${{ needs.cross-build.result }}
+        run: |
+          set -euo pipefail
+          [[ "$TEST_RESULT" == success ]]
+          [[ "$RACE_RESULT" == success ]]
+          [[ "$CROSS_BUILD_RESULT" == success ]]

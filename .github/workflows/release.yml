@@ -139,8 +139,89 @@ jobs:
             dist/*.sha256
           if-no-files-found: error
 
-  publish:
+  package-integrity:
     needs: [validate, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Verify all release archives and checksums
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          for os in windows linux darwin; do
+            for arch in amd64 arm64; do
+              if [[ "$os" == windows ]]; then
+                archive="codexify-go-v${VERSION}-${os}-${arch}.zip"
+                test -f "dist/$archive"
+                unzip -l "dist/$archive" | grep -q 'codexify-go.exe'
+              else
+                archive="codexify-go-v${VERSION}-${os}-${arch}.tar.gz"
+                legacy="codexify-go-v${VERSION}-${os}-${arch}.zip"
+                test -f "dist/$archive"
+                test -f "dist/$legacy"
+                tar -tzf "dist/$archive" | grep -qx 'codexify-go'
+                unzip -l "dist/$legacy" | grep -q 'codexify-go'
+              fi
+              (cd dist && sha256sum -c "$archive.sha256")
+              if [[ "$os" != windows ]]; then
+                (cd dist && sha256sum -c "$legacy.sha256")
+              fi
+            done
+          done
+
+  artifact-smoke:
+    needs: [validate, build]
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            goos: windows
+            archive_ext: zip
+            binary: codexify-go.exe
+          - os: ubuntu-latest
+            goos: linux
+            archive_ext: tar.gz
+            binary: codexify-go
+          - os: macos-14
+            goos: darwin
+            archive_ext: tar.gz
+            binary: codexify-go
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-${{ matrix.goos }}-amd64
+          path: dist
+      - name: Extract and execute packaged binary
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          GOOS_TARGET: ${{ matrix.goos }}
+          ARCHIVE_EXT: ${{ matrix.archive_ext }}
+          BINARY: ${{ matrix.binary }}
+        run: |
+          set -euo pipefail
+          archive="dist/codexify-go-v${VERSION}-${GOOS_TARGET}-amd64.${ARCHIVE_EXT}"
+          mkdir unpacked
+          if [[ "$ARCHIVE_EXT" == zip ]]; then
+            unzip -q "$archive" -d unpacked
+          else
+            tar -xzf "$archive" -C unpacked
+          fi
+          reported=$("./unpacked/${BINARY}" version)
+          [[ "$reported" == "$VERSION" ]] || { echo "artifact version mismatch: got=$reported want=$VERSION" >&2; exit 1; }
+
+  publish:
+    needs: [validate, build, package-integrity, artifact-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

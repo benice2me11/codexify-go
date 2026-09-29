@@ -72,19 +72,35 @@ func (m *Manager) importLegacyRustBinding(identity *Identity) (*Binding, error) 
 			return nil, nil
 		}
 	}
+	projectRoot, err := workspace.Canonical(legacy.ProjectRoot)
+	if err != nil {
+		return nil, nil
+	}
+	sourceProjectRoot, err := workspace.Canonical(legacy.SourceProjectRoot)
+	if err != nil {
+		return nil, nil
+	}
 	binding := Binding{
-		Version: bindingVersion, Mode: "project", SourceProjectRoot: legacy.SourceProjectRoot,
-		ProjectRoot: legacy.ProjectRoot, ManagedWorktree: legacy.ManagedWorktree,
+		Version: bindingVersion, Mode: "project", SourceProjectRoot: sourceProjectRoot,
+		ProjectRoot: projectRoot, ManagedWorktree: legacy.ManagedWorktree,
 		CreatedAt: time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	if legacy.RepositoryURL != nil {
 		binding.RepositoryURL = *legacy.RepositoryURL
 	}
 	if legacy.WorktreeGitRoot != nil {
-		binding.WorktreeGitRoot = *legacy.WorktreeGitRoot
+		canonical, err := workspace.Canonical(*legacy.WorktreeGitRoot)
+		if err != nil {
+			return nil, nil
+		}
+		binding.WorktreeGitRoot = canonical
 	}
 	if legacy.WorktreesRoot != nil {
-		binding.WorktreesRoot = *legacy.WorktreesRoot
+		canonical, err := workspace.Canonical(*legacy.WorktreesRoot)
+		if err != nil {
+			return nil, nil
+		}
+		binding.WorktreesRoot = canonical
 	}
 	if err := m.writeBinding(identity, binding); err != nil {
 		return nil, err

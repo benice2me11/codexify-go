@@ -267,7 +267,11 @@ func launchdLabel(name string) string {
 			b.WriteByte('-')
 		}
 	}
-	return "io.github.benice2me11.codexify-go." + strings.ToLower(strings.Trim(b.String(), ".-_"))
+	suffix := strings.ToLower(strings.Trim(b.String(), ".-_"))
+	if suffix == "" {
+		suffix = "service"
+	}
+	return "io.github.benice2me11.codexify-go." + suffix
 }
 
 func plistPath(label string) (string, error) {

@@ -14,6 +14,13 @@ func TestLaunchdLabelSanitizesServiceName(t *testing.T) {
 	}
 }
 
+func TestLaunchdLabelFallsBackWhenSanitizedNameIsEmpty(t *testing.T) {
+	got := launchdLabel("///")
+	if got != "io.github.benice2me11.codexify-go.service" {
+		t.Fatalf("label=%q", got)
+	}
+}
+
 func TestLaunchdPlistContainsLifecycleKeys(t *testing.T) {
 	text := plistXML(launchdPlist{
 		Label:             "io.github.benice2me11.codexify-go.test",

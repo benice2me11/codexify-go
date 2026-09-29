@@ -405,9 +405,16 @@ plain marker is migrated lazily as `source=legacy_plain`; later runtime schema
 changes append transition records without changing the first-observed
 conversation-version rule.
 
-GitHub Actions includes a Windows/Linux/macOS test/cross-build matrix and a tag
-release workflow. Stable `vX.Y.Z` tags produce the exact archives consumed by
-the updater:
+GitHub Actions includes native Windows/Linux/macOS tests, `go vet`, a Linux race
+detector job, all six cross-build targets, and a stable aggregate `required`
+check intended for branch protection. A manual release-candidate workflow runs
+the same native validation, packages all six targets, and executes the packaged
+amd64 artifacts on Windows/Linux/macOS without publishing a GitHub release.
+
+The stable tag release workflow re-runs native tests before packaging, injects
+the exact tag version into the binary, verifies every archive/checksum, executes
+the packaged amd64 artifacts on their native runners, and only then publishes.
+Stable `vX.Y.Z` tags produce the exact archives consumed by the updater:
 
 ```text
 codexify-go-vX.Y.Z-windows-amd64.zip
@@ -429,8 +436,13 @@ compatibility assets for Darwin/Linux. Older updaters query only
 their self-update path valid even after newer releases become latest.
 
 The release contract is regression-tested against the self-updater. Successful
-cross-compilation is not treated as runtime validation for Linux. macOS ARM64 is
-also exercised on a real Apple Silicon host.
+cross-compilation is not treated as runtime validation: source-built native
+tests and packaged-artifact smoke tests are separate gates. A manual
+`Linux Service Smoke` workflow additionally exercises the real `systemd --user`
+install/start/status/restart/stop/remove lifecycle with an isolated fake tunnel
+fixture, so CI can validate the service manager boundary without requiring a
+real connector or credentials. Windows/macOS Rust-to-Go cutover acceptance
+remains a separate host-level exercise.
 
 ### macOS Apple Silicon service model
 

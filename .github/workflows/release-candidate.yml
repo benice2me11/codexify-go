@@ -1,0 +1,198 @@
+name: Release Candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to validate and package
+        required: true
+        default: main
+        type: string
+      version:
+        description: Candidate version, for example 0.8.2-rc.1
+        required: true
+        default: 0.8.2-rc.1
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-candidate-${{ inputs.ref }}-${{ inputs.version }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.input.outputs.version }}
+      ref: ${{ steps.input.outputs.ref }}
+    steps:
+      - id: input
+        shell: bash
+        env:
+          INPUT_REF: ${{ inputs.ref }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          [[ "$INPUT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]] || {
+            echo "version must match X.Y.Z-rc.N" >&2
+            exit 1
+          }
+          [[ -n "$INPUT_REF" ]] || { echo "ref must not be empty" >&2; exit 1; }
+          echo "version=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "ref=$INPUT_REF" >> "$GITHUB_OUTPUT"
+
+  native-test:
+    needs: validate
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.ref }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go test -count=1 ./...
+      - run: go vet ./...
+      - name: Build and smoke-test candidate binary
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          ext=""
+          if [[ "${{ runner.os }}" == Windows ]]; then ext=.exe; fi
+          go build -trimpath \
+            -ldflags "-X github.com/benice2me11/codexify-go/internal/buildinfo.Version=${VERSION}" \
+            -o "codexify-go${ext}" ./cmd/codexify-go
+          reported=$("./codexify-go${ext}" version)
+          [[ "$reported" == "$VERSION" ]] || { echo "version mismatch: got=$reported want=$VERSION" >&2; exit 1; }
+
+  build:
+    needs: [validate, native-test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: windows
+            goarch: amd64
+          - goos: windows
+            goarch: arm64
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.ref }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build candidate archive
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          GOOS_TARGET: ${{ matrix.goos }}
+          GOARCH_TARGET: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/package
+          ext=""
+          if [[ "$GOOS_TARGET" == windows ]]; then ext=.exe; fi
+          binary="codexify-go${ext}"
+          CGO_ENABLED=0 GOOS="$GOOS_TARGET" GOARCH="$GOARCH_TARGET" \
+            go build -trimpath \
+              -ldflags "-s -w -X github.com/benice2me11/codexify-go/internal/buildinfo.Version=${VERSION}" \
+              -o "dist/package/$binary" ./cmd/codexify-go
+          if [[ "$GOOS_TARGET" == windows ]]; then
+            archive="codexify-go-v${VERSION}-${GOOS_TARGET}-${GOARCH_TARGET}.zip"
+            (cd dist/package && zip -9 "../$archive" "$binary")
+          else
+            archive="codexify-go-v${VERSION}-${GOOS_TARGET}-${GOARCH_TARGET}.tar.gz"
+            (cd dist/package && tar -czf "../$archive" "$binary")
+          fi
+          (cd dist && sha256sum "$archive" > "$archive.sha256")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rc-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+
+  artifact-smoke:
+    needs: [validate, build]
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            goos: windows
+            archive_ext: zip
+            binary: codexify-go.exe
+          - os: ubuntu-latest
+            goos: linux
+            archive_ext: tar.gz
+            binary: codexify-go
+          - os: macos-14
+            goos: darwin
+            archive_ext: tar.gz
+            binary: codexify-go
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: rc-${{ matrix.goos }}-amd64
+          path: dist
+      - name: Run packaged candidate
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          GOOS_TARGET: ${{ matrix.goos }}
+          ARCHIVE_EXT: ${{ matrix.archive_ext }}
+          BINARY: ${{ matrix.binary }}
+        run: |
+          set -euo pipefail
+          archive="dist/codexify-go-v${VERSION}-${GOOS_TARGET}-amd64.${ARCHIVE_EXT}"
+          mkdir unpacked
+          if [[ "$ARCHIVE_EXT" == zip ]]; then
+            unzip -q "$archive" -d unpacked
+          else
+            tar -xzf "$archive" -C unpacked
+          fi
+          reported=$("./unpacked/${BINARY}" version)
+          [[ "$reported" == "$VERSION" ]] || { echo "candidate artifact mismatch: got=$reported want=$VERSION" >&2; exit 1; }
+
+  required:
+    name: required
+    if: always()
+    needs: [native-test, build, artifact-smoke]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify candidate gates
+        env:
+          NATIVE_RESULT: ${{ needs.native-test.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          ARTIFACT_RESULT: ${{ needs.artifact-smoke.result }}
+        run: |
+          set -euo pipefail
+          [[ "$NATIVE_RESULT" == success ]]
+          [[ "$BUILD_RESULT" == success ]]
+          [[ "$ARTIFACT_RESULT" == success ]]

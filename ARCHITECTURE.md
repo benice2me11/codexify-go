@@ -376,6 +376,33 @@ when a newer release becomes latest. The workflow is publishing infrastructure,
 not by itself evidence of Linux runtime/service parity. macOS ARM64 additionally
 has live lifecycle validation on Apple Silicon.
 
+## Linux user-systemd lifecycle
+
+Linux uses a per-user systemd unit rather than a root daemon. The unit is stored
+below the effective user configuration directory, enabled for `default.target`,
+and managed only through `systemctl --user`. Codexify Go does not automatically
+enable lingering: pre-login/post-logout operation is a separate account policy
+choice rather than an install side effect.
+
+The unit runs `codexify-go service run` directly as the logged-in user. Unlike
+Windows, no second user-worker process is needed. The service uses
+`Restart=on-failure`, `KillMode=control-group`, and a stop timeout derived from
+the supervisor shutdown budget. `ExecStart` is generated without a shell;
+systemd's no-environment-expansion command prefix plus explicit argument quoting
+preserve literal dollar signs, percent specifiers, whitespace, backslashes, and
+quotes in absolute executable/config paths.
+
+The first native validation host is Ubuntu 26.04.1 LTS x86_64, kernel
+7.0.0-34-generic, systemd 259. A dedicated smoke unit passed lifecycle
+operations, MCP health, tunnel-child SIGKILL recovery, service SIGKILL recovery,
+and cgroup cleanup with no surviving descendants. The pinned OpenAI
+`tunnel-client-runtime v0.0.12` independently passed managed installation,
+integrity verification, compatibility probes, and native ELF x86_64 inspection.
+These results validate the new lifecycle backend but do not yet close Linux
+production parity: cold login/reboot recovery, a real managed-tunnel connector
+session, service-context Git/SSH and full MCP workflow, and self-update remain
+mandatory acceptance steps.
+
 ## macOS LaunchAgent lifecycle
 
 Darwin installs a per-user LaunchAgent in `~/Library/LaunchAgents` and manages it
@@ -445,7 +472,7 @@ account name or profile path.
 ### Remaining Codexify compatibility
 
 - pixel-level parity with upstream Rust's substantially larger ChatGPT widgets;
-- Linux production runtime/service validation.
+- complete the remaining Linux production acceptance steps documented above.
 
 ## Upstream reference
 

@@ -7,10 +7,10 @@
   "service": {
     "name": "CodexifyGo",
     "displayName": "Codexify Go",
-    "description": "Native Windows supervisor for Codexify-compatible MCP and OpenAI tunnel runtime."
+    "description": "Native supervisor for Codexify-compatible MCP and OpenAI tunnel runtime."
   },
   "mcp": {
-    "workspaceRoot": "${USERPROFILE}\\codexify-go-workspace",
+    "workspaceRoot": ".",
     "authEnabled": true,
     "maxRequestBodyBytes": 4194304,
     "multiProject": false,
@@ -68,7 +68,7 @@
   "tunnel": {
     "managedDir": ".codexify-go/openai-tunnel",
     "tunnelId": "tunnel_REPLACE_ME",
-    "apiKeyRef": "file:C:\\path\\to\\tunnel.key",
+    "apiKeyRef": "file:.codexify-go/tunnel.key",
     "mcpServerUrl": "http://127.0.0.1:3300/mcp/tunnel_REPLACE_ME",
     "startupWaitTimeout": "15s",
     "healthUrlFile": ".codexify-go/tunnel-health.url",

@@ -1,6 +1,9 @@
 package projects
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +13,120 @@ import (
 	"github.com/benice2me11/codexify-go/internal/config"
 	"github.com/benice2me11/codexify-go/internal/workspace"
 )
+
+func TestWorkspaceImportsExactLegacyRustBindingOnGoBindingMiss(t *testing.T) {
+	root := t.TempDir()
+	project := filepath.Join(root, "project-a")
+	initGitRepo(t, project)
+	manager := testManager(t, root, "never")
+	meta := map[string]any{"openai/session": "legacy-chat"}
+
+	sum := sha256.Sum256([]byte("codexify/openai-session/v1\x00legacy-chat"))
+	legacyKey := hex.EncodeToString(sum[:])
+	legacyDir := filepath.Join(root, ".codexify", "conversation-projects", "instance")
+	if err := os.MkdirAll(legacyDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	legacy := map[string]any{
+		"version": 2, "accessRoot": root, "projectRoot": project,
+		"sourceProjectRoot": project, "repositoryUrl": nil,
+		"managedWorktree": false, "worktreeGitRoot": nil, "worktreesRoot": nil,
+	}
+	data, err := json.MarshalIndent(legacy, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyPath := filepath.Join(legacyDir, legacyKey+".json")
+	if err := os.WriteFile(legacyPath, append(data, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(legacyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resolved, info, err := manager.Workspace(meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Path() != project || info.ProjectRoot != project || info.BindingScope != "chatgpt_conversation" {
+		t.Fatalf("unexpected migrated workspace: %q %+v", resolved.Path(), info)
+	}
+	if _, err := os.Stat(manager.bindingPath(IdentityFromMeta(meta))); err != nil {
+		t.Fatalf("Go binding was not persisted: %v", err)
+	}
+	after, err := os.ReadFile(legacyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("legacy Rust binding was modified")
+	}
+}
+
+func TestWorkspaceDoesNotImportUnsafeLegacyRustBinding(t *testing.T) {
+	root := t.TempDir()
+	project := filepath.Join(root, "project-a")
+	initGitRepo(t, project)
+	manager := testManager(t, root, "never")
+	meta := map[string]any{"openai/session": "unsafe-legacy-chat"}
+	identity := IdentityFromMeta(meta)
+	legacyDir := filepath.Join(root, ".codexify", "conversation-projects", "instance")
+	if err := os.MkdirAll(legacyDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	legacy := map[string]any{
+		"version": 2, "accessRoot": filepath.Join(root, "other"),
+		"projectRoot": project, "sourceProjectRoot": project,
+		"managedWorktree": false,
+	}
+	data, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDir, identity.LegacyKey+".json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := manager.Workspace(meta); err == nil || !strings.Contains(err.Error(), "no project selected") {
+		t.Fatalf("unsafe legacy binding should not import, got %v", err)
+	}
+}
+
+func TestGoBindingWinsOverLegacyRustBinding(t *testing.T) {
+	root := t.TempDir()
+	goProject := filepath.Join(root, "go-project")
+	legacyProject := filepath.Join(root, "legacy-project")
+	initGitRepo(t, goProject)
+	initGitRepo(t, legacyProject)
+	manager := testManager(t, root, "never")
+	meta := map[string]any{"openai/session": "existing-go-chat"}
+	if _, err := manager.Select(meta, "go-project", nil); err != nil {
+		t.Fatal(err)
+	}
+	identity := IdentityFromMeta(meta)
+	legacyDir := filepath.Join(root, ".codexify", "conversation-projects", "instance")
+	if err := os.MkdirAll(legacyDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	legacy := map[string]any{
+		"version": 2, "accessRoot": root, "projectRoot": legacyProject,
+		"sourceProjectRoot": legacyProject, "managedWorktree": false,
+	}
+	data, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDir, identity.LegacyKey+".json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	resolved, _, err := manager.Workspace(meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Path() != goProject {
+		t.Fatalf("legacy binding overrode Go binding: %q", resolved.Path())
+	}
+}
 
 func TestConversationBindingPersistsWithoutRawSession(t *testing.T) {
 	root := t.TempDir()

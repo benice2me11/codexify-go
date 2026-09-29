@@ -13,6 +13,7 @@ const (
 
 type Identity struct {
 	Key        string
+	LegacyKey  string
 	Scope      string
 	Persistent bool
 }
@@ -24,7 +25,9 @@ func IdentityFromMeta(meta map[string]any) *Identity {
 	if raw, ok := meta[openAISessionMetaKey].(string); ok {
 		raw = strings.TrimSpace(raw)
 		if raw != "" {
-			return hashedIdentity("codexify-go/openai-session/v1\x00", raw, "chatgpt_conversation", true)
+			identity := hashedIdentity("codexify-go/openai-session/v1\x00", raw, "chatgpt_conversation", true)
+			identity.LegacyKey = hashedIdentity("codexify/openai-session/v1\x00", raw, "chatgpt_conversation", true).Key
+			return identity
 		}
 	}
 	if raw, ok := meta[transportSessionMetaKey].(string); ok {

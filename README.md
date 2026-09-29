@@ -1,8 +1,8 @@
 # codexify-go
 
-Experimental Go implementation of the Codexify runtime architecture, starting
-with the part that most benefits from native Windows integration: service
-lifecycle and supervision of OpenAI's official Secure MCP Tunnel runtime.
+Experimental Go implementation of the Codexify runtime architecture, with
+native OS service lifecycle and supervision of OpenAI's official Secure MCP
+Tunnel runtime.
 
 The project is inspired by
 [devnoname120/codexify](https://github.com/devnoname120/codexify), which is MIT
@@ -14,6 +14,7 @@ port and not yet a drop-in replacement.
 Implemented:
 
 - native Windows Service Control Manager (SCM) integration;
+- native Linux per-user systemd service integration;
 - automatic Windows service startup;
 - SCM recovery actions at 5s, 15s and 60s;
 - no Task Scheduler or PowerShell in the service lifecycle;
@@ -122,8 +123,11 @@ Not implemented yet:
 - pixel-level parity with the much larger upstream Rust ChatGPT widgets; the Go
   implementation intentionally uses compact self-contained MCP Apps over the
   same server contracts;
-- Linux runtime/service validation. Windows and macOS Apple Silicon are now
-  production-validated; Linux remains the next dedicated platform-parity stage.
+- full Linux production validation. Native user-systemd lifecycle and crash
+  recovery have passed on Ubuntu 26.04.1 LTS x86_64 with systemd 259, and the
+  managed OpenAI tunnel runtime installs/verifies natively. Cold login/reboot,
+  a real managed-tunnel connector session, service-context Git/SSH, and
+  self-update still remain before Linux can be called production-validated.
 
 The MCP core has been exercised with both raw MCP requests and the official Go
 MCP client. End-to-end Windows SCM smoke tests verify the user-context lifecycle
@@ -163,28 +167,31 @@ managed tunnel install -> pinned archive SHA -> binary verify -> compatibility p
 
 ## Build
 
-```powershell
+```text
 go test ./...
-go build -o bin\codexify-go.exe .\cmd\codexify-go
+go build -o bin/codexify-go ./cmd/codexify-go
 ```
 
 Go 1.26+ is currently used for development.
 
 ## Configuration
 
-Copy `config.example.json` to an ignored local file:
+Copy `config.example.json` to an ignored local file. Relative paths in the
+example are resolved from the config file directory.
 
-```powershell
-Copy-Item config.example.json config.local.json
+```text
+cp config.example.json config.local.json
+# PowerShell: Copy-Item config.example.json config.local.json
 ```
 
 Set:
 
 - `mcp.workspaceRoot` to the directory this instance is allowed to access. In
   multi-project mode this is the **access root**, not an individual project;
-- `tunnel.executable` to OpenAI's official `tunnel-client-runtime.exe`;
+- omit `tunnel.executable` to use the pinned managed OpenAI runtime, or set it
+  explicitly to a compatible local `tunnel-client-runtime` binary;
 - `tunnel.tunnelId`;
-- `tunnel.apiKeyRef` to an `env:NAME` or `file:C:\...` reference;
+- `tunnel.apiKeyRef` to an `env:NAME` or `file:<path>` reference;
 - `tunnel.mcpServerUrl` to the local MCP endpoint.
 
 `tunnel.mcpServerUrl` must be an explicit loopback HTTP URL such as
@@ -439,8 +446,8 @@ supervisor all execute directly as that user.
 
 POSIX child processes are placed in their own process groups. Graceful/forced
 supervisor shutdown and exec-session cancellation signal the full process group,
-so grandchildren do not survive service stop. The same behavior is shared with
-the future Linux service backend.
+so grandchildren do not survive service stop. Linux uses the same process-tree
+behavior under its per-user systemd cgroup.
 
 On the Apple Silicon validation host the real LaunchAgent lifecycle passed
 install/start/status, MCP health, forced tunnel-child death/restart, and clean
@@ -448,16 +455,43 @@ stop/remove without orphan processes. The managed OpenAI
 `tunnel-client-runtime v0.0.12` was also downloaded, SHA-verified, compatibility
 probed, and confirmed as a native Mach-O arm64 executable.
 
+### Linux user-systemd service model
+
+Linux installs a per-user unit under the effective user configuration directory
+(`$XDG_CONFIG_HOME/systemd/user`, normally `~/.config/systemd/user`) and enables
+it for `default.target`. Normal install/start/stop/restart/remove/status
+operations use `systemctl --user` and require neither a root daemon nor an
+automatic `loginctl enable-linger` side effect.
+
+The unit executes Codexify Go directly as the logged-in user, so Linux does not
+use the Windows user-worker split. It uses `Restart=on-failure`,
+`KillMode=control-group`, bounded shutdown, and journal stdout/stderr. Unit names
+are normalized and hash-suffixed, and generated `ExecStart` arguments are
+shell-free and safe for absolute paths containing spaces, percent signs, and
+dollar signs.
+
+On Ubuntu 26.04.1 LTS x86_64 (kernel 7.0.0-34-generic, systemd 259), a dedicated
+smoke unit passed install/start/status/restart/stop/remove, MCP health, forced
+tunnel-child death/restart, forced service death/restart, and final cgroup
+cleanup without orphan processes. The official managed
+`tunnel-client-runtime v0.0.12` also passed download, pinned SHA-256,
+compatibility probes, and native ELF x86_64 verification. This is intentionally
+not yet described as full Linux production validation: cold login/reboot, an
+end-to-end real managed-tunnel connector session, service-context Git/SSH/MCP
+workflow, and Linux self-update are still pending.
+
 Validate configuration without starting the tunnel:
 
-```powershell
-.\bin\codexify-go.exe doctor --config .\config.local.json
+```text
+./bin/codexify-go doctor --config ./config.local.json
+# PowerShell: .\bin\codexify-go.exe doctor --config .\config.local.json
 ```
 
 Run in the foreground:
 
-```powershell
-.\bin\codexify-go.exe run --config .\config.local.json
+```text
+./bin/codexify-go run --config ./config.local.json
+# PowerShell: .\bin\codexify-go.exe run --config .\config.local.json
 ```
 
 ## Windows service

@@ -185,7 +185,7 @@ func Default() Config {
 		Service: ServiceConfig{
 			Name:        "CodexifyGo",
 			DisplayName: "Codexify Go",
-			Description: "Native Windows supervisor for Codexify-compatible MCP and OpenAI tunnel runtime.",
+			Description: "Native supervisor for Codexify-compatible MCP and OpenAI tunnel runtime.",
 		},
 		MCP: MCPConfig{
 			WorkspaceRoot:       ".",

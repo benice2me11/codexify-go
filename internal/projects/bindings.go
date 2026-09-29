@@ -53,7 +53,7 @@ func (m *Manager) readBinding(identity *Identity) (*Binding, error) {
 	path := m.bindingPath(identity)
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+		return m.importLegacyRustBinding(identity)
 	}
 	if err != nil {
 		return nil, err

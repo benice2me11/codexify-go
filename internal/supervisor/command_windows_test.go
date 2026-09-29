@@ -6,10 +6,43 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"os/exec"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestAttachProcessJobKillsProcessWhenReleased(t *testing.T) {
+	cmd := exec.Command(
+		"powershell.exe",
+		"-NoLogo",
+		"-NoProfile",
+		"-NonInteractive",
+		"-Command",
+		"Start-Sleep -Seconds 30",
+	)
+	configureProcess(cmd)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	release, err := attachProcess(cmd)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		t.Fatal(err)
+	}
+	release()
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		_ = cmd.Process.Kill()
+		t.Fatal("process survived closing kill-on-close job")
+	}
+}
 
 func TestCommandProcessStopsHiddenChild(t *testing.T) {
 	factory := &CommandFactory{

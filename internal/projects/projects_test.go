@@ -7,12 +7,63 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/benice2me11/codexify-go/internal/config"
 	"github.com/benice2me11/codexify-go/internal/workspace"
 )
+
+func TestWindowsExtendedAccessRootSelectAndResumeOrdinaryProject(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows path identity semantics")
+	}
+	root := t.TempDir()
+	project := filepath.Join(root, "work-search")
+	initGitRepo(t, project)
+	extendedRoot := `\\?\` + root
+	manager, err := New(config.MCPConfig{
+		WorkspaceRoot:    extendedRoot,
+		MultiProject:     true,
+		BindingsDir:      filepath.Join(root, ".state", "bindings"),
+		ProjectScanDepth: 3,
+		Worktrees: config.WorktreeConfig{
+			Mode: "never",
+			Root: filepath.Join(root, ".state", "worktrees"),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	createWorktree := false
+	selected, err := manager.Select(
+		map[string]any{"openai/session": "windows-path-select"},
+		"work-search",
+		&createWorktree,
+	)
+	if err != nil {
+		t.Fatalf("select beneath extended access root failed: %v", err)
+	}
+	want, err := workspace.Canonical(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleanComparable(selected.SourceProjectRoot) != cleanComparable(want) {
+		t.Fatalf("selected source %q, want %q", selected.SourceProjectRoot, want)
+	}
+	extendedProject := `\\?\` + project
+	resumed, err := manager.Resume(
+		map[string]any{"openai/session": "windows-path-resume"},
+		extendedProject,
+	)
+	if err != nil {
+		t.Fatalf("resume with extended path failed: %v", err)
+	}
+	if cleanComparable(resumed.ProjectRoot) != cleanComparable(want) {
+		t.Fatalf("resumed root %q, want %q", resumed.ProjectRoot, want)
+	}
+}
 
 func TestWorkspaceImportsExactLegacyRustBindingOnGoBindingMiss(t *testing.T) {
 	root := t.TempDir()

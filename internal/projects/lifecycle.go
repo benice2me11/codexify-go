@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/benice2me11/codexify-go/internal/workspace"
 )
 
 type WorkspaceChange struct {
@@ -147,11 +149,7 @@ func (m *Manager) Resume(meta map[string]any, resumePath string) (WorkspaceInfo,
 	if !filepath.IsAbs(resumePath) {
 		return WorkspaceInfo{}, errors.New("resumePath must be an absolute active workspace path")
 	}
-	requested, err := filepath.Abs(resumePath)
-	if err != nil {
-		return WorkspaceInfo{}, err
-	}
-	requested, err = filepath.EvalSymlinks(requested)
+	requested, err := workspace.Canonical(resumePath)
 	if err != nil {
 		return WorkspaceInfo{}, fmt.Errorf("cannot resume workspace: %w", err)
 	}

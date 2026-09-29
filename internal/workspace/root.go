@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -18,10 +19,10 @@ func Canonical(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	abs = filepath.Clean(abs)
+	abs = NormalizePathIdentity(abs)
 	resolved, err := filepath.EvalSymlinks(abs)
 	if err == nil {
-		return filepath.Clean(resolved), nil
+		return NormalizePathIdentity(resolved), nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
 		return "", err
@@ -49,7 +50,37 @@ func Canonical(path string) (string, error) {
 	for _, part := range suffix {
 		out = filepath.Join(out, part)
 	}
-	return filepath.Clean(out), nil
+	return NormalizePathIdentity(out), nil
+}
+
+// NormalizePathIdentity collapses platform-specific aliases that refer to the
+// same filesystem path. Windows canonicalization may return extended-length
+// device paths while Git and user input use ordinary DOS/UNC paths.
+func NormalizePathIdentity(path string) string {
+	clean := filepath.Clean(path)
+	if runtime.GOOS != "windows" {
+		return clean
+	}
+	upper := strings.ToUpper(clean)
+	const extendedUNC = `\\?\UNC\`
+	const deviceUNC = `\\.\UNC\`
+	if strings.HasPrefix(upper, extendedUNC) {
+		return filepath.Clean(`\\` + clean[len(extendedUNC):])
+	}
+	if strings.HasPrefix(upper, deviceUNC) {
+		return filepath.Clean(`\\` + clean[len(deviceUNC):])
+	}
+	for _, prefix := range []string{`\\?\`, `\\.\`} {
+		if strings.HasPrefix(clean, prefix) {
+			rest := clean[len(prefix):]
+			if len(rest) >= 3 &&
+				((rest[0] >= 'A' && rest[0] <= 'Z') || (rest[0] >= 'a' && rest[0] <= 'z')) &&
+				rest[1] == ':' && os.IsPathSeparator(rest[2]) {
+				return filepath.Clean(rest)
+			}
+		}
+	}
+	return clean
 }
 
 func New(path string) (*Root, error) {
@@ -141,6 +172,7 @@ func (r *Root) Resolve(rel string, allowMissing bool) (string, error) {
 }
 
 func (r *Root) Relative(abs string) (string, error) {
+	abs = NormalizePathIdentity(abs)
 	if err := r.ensureInside(abs); err != nil {
 		return "", err
 	}
@@ -155,7 +187,7 @@ func (r *Root) Relative(abs string) (string, error) {
 }
 
 func (r *Root) ensureInside(path string) error {
-	rel, err := filepath.Rel(r.real, filepath.Clean(path))
+	rel, err := filepath.Rel(r.real, NormalizePathIdentity(path))
 	if err != nil {
 		return err
 	}

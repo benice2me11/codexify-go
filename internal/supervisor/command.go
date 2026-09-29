@@ -33,21 +33,40 @@ func (f *CommandFactory) Start(context.Context) (Process, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
+	releaseProcess, err := attachProcess(cmd)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return nil, err
+	}
 	p := &commandProcess{
-		cmd:  cmd,
-		done: make(chan error, 1),
+		cmd:            cmd,
+		done:           make(chan error, 1),
+		releaseProcess: releaseProcess,
 	}
 	go func() {
-		p.done <- cmd.Wait()
+		err := cmd.Wait()
+		p.release()
+		p.done <- err
 		close(p.done)
 	}()
 	return p, nil
 }
 
 type commandProcess struct {
-	cmd      *exec.Cmd
-	done     chan error
-	stopOnce sync.Once
+	cmd            *exec.Cmd
+	done           chan error
+	stopOnce       sync.Once
+	releaseOnce    sync.Once
+	releaseProcess func()
+}
+
+func (p *commandProcess) release() {
+	p.releaseOnce.Do(func() {
+		if p.releaseProcess != nil {
+			p.releaseProcess()
+		}
+	})
 }
 
 func (p *commandProcess) PID() int {

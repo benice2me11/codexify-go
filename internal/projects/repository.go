@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/benice2me11/codexify-go/internal/workspace"
 )
 
 type CheckoutKind string
@@ -405,7 +407,7 @@ func (m *Manager) pathInsideAccess(path string) (string, error) {
 	if path == "" {
 		return "", errors.New("path is empty")
 	}
-	abs, err := filepath.Abs(path)
+	abs, err := workspace.Canonical(path)
 	if err != nil {
 		return "", err
 	}

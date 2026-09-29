@@ -14,6 +14,10 @@ func configureProcess(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 }
 
+func attachProcess(*exec.Cmd) (func(), error) {
+	return func() {}, nil
+}
+
 func stopProcessTree(ctx context.Context, pid int) error {
 	err := syscall.Kill(-pid, syscall.SIGINT)
 	if errors.Is(err, syscall.ESRCH) {

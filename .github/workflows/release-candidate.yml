@@ -1,6 +1,9 @@
 name: Release Candidate
 
 on:
+  push:
+    branches:
+      - 'rc/**'
   workflow_dispatch:
     inputs:
       ref:
@@ -31,10 +34,11 @@ jobs:
       - id: input
         shell: bash
         env:
-          INPUT_REF: ${{ inputs.ref }}
-          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref_name }}
+          INPUT_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
         run: |
           set -euo pipefail
+          INPUT_VERSION="${INPUT_VERSION#rc/}"
           [[ "$INPUT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]] || {
             echo "version must match X.Y.Z-rc.N" >&2
             exit 1

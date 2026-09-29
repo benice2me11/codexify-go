@@ -2,6 +2,16 @@ name: Linux Service Smoke
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'cmd/codexify-go/**'
+      - 'internal/app/**'
+      - 'internal/service/**'
+      - 'internal/supervisor/**'
+      - 'internal/tunnel/**'
+      - 'config.example.json'
+      - '.github/workflows/linux-service-smoke.yml'
 
 permissions:
   contents: read

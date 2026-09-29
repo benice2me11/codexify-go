@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/benice2me11/codexify-go/internal/workspace"
 )
 
 type legacyRustBinding struct {
@@ -94,14 +96,18 @@ func safeLegacyPath(accessRoot, path string) bool {
 	if strings.TrimSpace(path) == "" {
 		return false
 	}
-	abs, err := filepath.Abs(path)
+	canonicalRoot, err := workspace.Canonical(accessRoot)
 	if err != nil {
 		return false
 	}
-	rel, err := filepath.Rel(accessRoot, abs)
+	canonicalPath, err := workspace.Canonical(path)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(canonicalRoot, canonicalPath)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return false
 	}
-	info, err := os.Stat(abs)
+	info, err := os.Stat(canonicalPath)
 	return err == nil && info.IsDir()
 }

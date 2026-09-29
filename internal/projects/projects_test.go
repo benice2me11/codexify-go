@@ -49,7 +49,11 @@ func TestWorkspaceImportsExactLegacyRustBindingOnGoBindingMiss(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resolved.Path() != project || info.ProjectRoot != project || info.BindingScope != "chatgpt_conversation" {
+	projectCanonical, err := workspace.Canonical(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Path() != projectCanonical || info.ProjectRoot != projectCanonical || info.BindingScope != "chatgpt_conversation" {
 		t.Fatalf("unexpected migrated workspace: %q %+v", resolved.Path(), info)
 	}
 	if _, err := os.Stat(manager.bindingPath(IdentityFromMeta(meta))); err != nil {
@@ -123,7 +127,11 @@ func TestGoBindingWinsOverLegacyRustBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resolved.Path() != goProject {
+	goProjectCanonical, err := workspace.Canonical(goProject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Path() != goProjectCanonical {
 		t.Fatalf("legacy binding overrode Go binding: %q", resolved.Path())
 	}
 }

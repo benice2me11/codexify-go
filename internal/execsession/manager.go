@@ -93,6 +93,16 @@ func (m *Manager) Write(id, chars string, yield time.Duration) (Result, error) {
 	if s == nil {
 		return Result{}, fmt.Errorf("unknown session %q", id)
 	}
+	if chars == "\x03" {
+		if err := stopProcessTree(s.cmd.Process.Pid); err != nil {
+			select {
+			case <-s.done:
+			default:
+				return Result{}, err
+			}
+		}
+		return m.await(s, normalizeYield(yield))
+	}
 	if chars != "" {
 		if _, err := io.WriteString(s.stdin, chars); err != nil {
 			select {

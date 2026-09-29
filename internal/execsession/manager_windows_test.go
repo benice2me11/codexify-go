@@ -61,3 +61,27 @@ func TestLongCommandReturnsSessionAndPolls(t *testing.T) {
 		t.Fatalf("output = %q", output.String())
 	}
 }
+
+func TestWriteCtrlCStopsRunningSession(t *testing.T) {
+	m := NewManager()
+	defer m.Close()
+	res, err := m.Start(StartInput{
+		Command: "echo ready & ping -t 127.0.0.1 >nul",
+		Shell:   "cmd",
+		Yield:   50 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Running || res.SessionID == "" {
+		t.Fatalf("expected running session: %+v", res)
+	}
+
+	res, err = m.Write(res.SessionID, "\x03", 2*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Running {
+		t.Fatalf("expected Ctrl-C to stop session: %+v", res)
+	}
+}

@@ -1,3 +1,4 @@
 package buildinfo
 
-const Version = "0.8.2-dev"
+// Version is overridden for release builds via -ldflags -X.
+var Version = "0.8.2-dev"

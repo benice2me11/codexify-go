@@ -1,4 +1,4 @@
-﻿name: Release
+name: Release
 
 on:
   push:
@@ -13,6 +13,10 @@ on:
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   validate:
@@ -37,9 +41,42 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
 
-  build:
+  test:
     needs: validate
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go test -count=1 ./...
+      - run: go vet ./...
+      - name: Build and smoke-test native binary
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          ext=""
+          if [[ "${{ runner.os }}" == Windows ]]; then ext=.exe; fi
+          go build -trimpath \
+            -ldflags "-X github.com/benice2me11/codexify-go/internal/buildinfo.Version=${VERSION}" \
+            -o "codexify-go${ext}" ./cmd/codexify-go
+          reported=$("./codexify-go${ext}" version)
+          [[ "$reported" == "$VERSION" ]] || { echo "version mismatch: got=$reported want=$VERSION" >&2; exit 1; }
+
+  build:
+    needs: [validate, test]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -77,7 +114,9 @@ jobs:
           if [[ "$GOOS_TARGET" == windows ]]; then ext=.exe; fi
           binary="codexify-go${ext}"
           CGO_ENABLED=0 GOOS="$GOOS_TARGET" GOARCH="$GOARCH_TARGET" \
-            go build -trimpath -ldflags "-s -w" -o "dist/package/$binary" ./cmd/codexify-go
+            go build -trimpath \
+              -ldflags "-s -w -X github.com/benice2me11/codexify-go/internal/buildinfo.Version=${VERSION}" \
+              -o "dist/package/$binary" ./cmd/codexify-go
           if [[ "$GOOS_TARGET" == windows ]]; then
             archive="codexify-go-v${VERSION}-${GOOS_TARGET}-${GOARCH_TARGET}.zip"
             (cd dist/package && zip -9 "../$archive" "$binary")
@@ -103,6 +142,7 @@ jobs:
   publish:
     needs: [validate, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/download-artifact@v4
         with:

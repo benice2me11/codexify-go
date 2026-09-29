@@ -15,7 +15,7 @@ import (
 	"github.com/benice2me11/codexify-go/internal/config"
 )
 
-const BaseVersion = buildinfo.Version
+var BaseVersion = buildinfo.Version
 
 type Store struct {
 	dir string

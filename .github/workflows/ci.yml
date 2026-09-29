@@ -1,4 +1,4 @@
-﻿name: CI
+name: CI
 
 on:
   push:
@@ -8,8 +8,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -21,18 +26,39 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - run: go test ./...
+      - run: go test -count=1 ./...
       - run: go vet ./...
-      - run: go build -trimpath ./cmd/codexify-go
+      - name: Build native binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          ext=""
+          if [[ "${{ runner.os }}" == Windows ]]; then ext=.exe; fi
+          go build -trimpath -o "codexify-go${ext}" ./cmd/codexify-go
+          "./codexify-go${ext}" version
+
+  race:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go test -race -count=1 ./...
 
   cross-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         include:
           - goos: windows
             goarch: amd64
+          - goos: windows
+            goarch: arm64
           - goos: linux
             goarch: amd64
           - goos: linux

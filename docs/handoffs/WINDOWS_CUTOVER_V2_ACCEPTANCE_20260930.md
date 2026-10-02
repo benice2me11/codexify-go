@@ -27,6 +27,34 @@
 - Closing client widgets, user sign-in, a second ChatGPT conversation, or reboot need actual completion evidence. Do not fabricate these from a tool call in the current conversation.
 - All numeric limits below are project acceptance targets and safety triggers proposed here, not vendor SLAs or measurements already achieved. Freeze them before the run; do not relax them after a failure to obtain PASS.
 
+### Execution discipline approved on 2026-10-02
+
+Reduce coordination, repeated checks and intermediate reporting while retaining
+the acceptance criteria and safety thresholds below:
+
+- Work only on outstanding requirements. Reuse recorded PASS evidence for the
+  unchanged candidate; rerun affected checks after changes or failures and keep
+  every repetition explicitly required by this plan, including after G08/G09.
+- Define the expected result, required evidence and stopping condition before
+  each scenario. Stop once those criteria are met; add checks only to resolve
+  a concrete failure or remaining uncertainty.
+- Before live actions, verify current ownership, readiness, observation and
+  recovery prerequisites. Historical PASS does not establish current health.
+- Batch independent reads and validate retained evidence with a collector.
+  Keep dependent mutations sequential, preserve the required call spacing,
+  and never retry an uncertain mutation automatically.
+- Reuse the existing G05 client A/B tasks and fixtures. Add another agent or
+  review only when it addresses a specific implementation or recovery risk.
+- Prepare the scenario and confirm operator UI readiness before starting a
+  bounded capture. Use the validated Windows PowerShell 5.1 host for the
+  existing cutover controllers. An expired capture is not request evidence.
+- Keep raw output in private evidence files and report concise findings,
+  deviations and the next required action. Produce one report and selective
+  local commit per completed gate, or a checkpoint for an actual blocker.
+- Preserve real client results, binding/session isolation, rollback evidence
+  and actual UI confirmation. This efficiency policy does not waive a gate,
+  turn PENDING into PASS or authorize publishing or pushing changes.
+
 ## 2. Review focus
 
 1. Stale schemas or mounted old widgets: fresh metadata and actual served /v2/ resources must match the candidate; restarting a server alone is insufficient.

@@ -79,6 +79,31 @@ four frozen asset hashes matched. These observations do not establish G08/G09.
 
 ## Remaining work
 
+### UI attempt and diagnostic boundary, 2026-10-02
+
+The operator reported that **Select** on fixture B produced no visible result.
+The new UI capture covered 19:16:58Z-19:26:58Z; the ordinary tunnel log records
+forwarded requests at 19:29:22Z-19:30:11Z, after that capture deadline. Those
+ordinary records do not identify the tools or their returned MCP errors. No
+Switch/Select request was decoded inside the capture, and both original
+conversation binding files remained unchanged. The B stdin fixture was closed
+at 19:32:05Z with exit code zero and its original directory/marker; this cleanup
+was outside decoded coverage and does not pass the switching check.
+
+An offline probe executed the unchanged embedded SetupHTML with a synthetic
+MCP `isError=true` selection response. It reproduced an empty error area and
+two follow-up status/catalog calls: the current widget ignores that error
+response. This proves an error-reporting defect, not the exact rejection reason
+for the operator's live click. Captured widget bootstrap calls also lacked a
+conversation hash; missing identity is a hypothesis until a fresh selection
+request establishes the live failure. The frozen candidate is unchanged.
+
+Private probe and trace evidence is retained under the existing G05 retry
+evidence directory's `ui-restart` phase. Diagnose one operator Select request
+before repeating the isolation scenario; do not repeat already passed gates.
+
+### Outstanding acceptance
+
 The next step needs the actual **Switch project** button in client A while a
 new B stdin session remains live, followed by A's return to the recorded exact
 worktree and verification of B's unchanged binding and session. The available

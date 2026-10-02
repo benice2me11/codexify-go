@@ -65,6 +65,12 @@ func New(cfg config.MCPConfig) (*Manager, error) {
 	}
 	if cfg.Worktrees.Root == "" {
 		cfg.Worktrees.Root = filepath.Join(access.Path(), ".codexify-go", "worktrees")
+	} else {
+		// Configuration imported from Windows may contain an extended-length
+		// (\\?\C:\...) spelling. Keep filesystem identity canonical before this
+		// path is handed to Git: git-for-windows does not accept that spelling
+		// consistently for `git worktree add` destinations.
+		cfg.Worktrees.Root = workspace.NormalizePathIdentity(cfg.Worktrees.Root)
 	}
 	if strings.TrimSpace(cfg.Worktrees.Mode) == "" {
 		cfg.Worktrees.Mode = "auto"

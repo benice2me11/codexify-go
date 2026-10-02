@@ -31,6 +31,7 @@ import (
 	"github.com/benice2me11/codexify-go/internal/execsession"
 	"github.com/benice2me11/codexify-go/internal/ingress"
 	"github.com/benice2me11/codexify-go/internal/markdownchat"
+	"github.com/benice2me11/codexify-go/internal/mcpdiag"
 	"github.com/benice2me11/codexify-go/internal/memory"
 	patchtool "github.com/benice2me11/codexify-go/internal/patch"
 	"github.com/benice2me11/codexify-go/internal/projectdoc"
@@ -46,27 +47,28 @@ import (
 const InternalAuthEnv = "CODEXIFY_GO_INTERNAL_MCP_AUTHORIZATION"
 
 type Runtime struct {
-	cfg       config.Config
-	root      *workspace.Root
-	projects  *projects.Manager
-	bridge    *upstream.Bridge
-	memory    *memory.Store
-	skills    *skills.Reader
-	artifacts *artifacts.Store
-	schema    *connectorschema.Store
-	schemaVer string
-	diff      *diffmgr.Manager
-	diffKey   string
-	ingress   *ingress.Downloader
-	chat      *markdownchat.Store
-	tickets   *agenttickets.Manager
-	exec      *execsession.Manager
-	server    *mcp.Server
-	http      *http.Server
-	listener  net.Listener
-	token     string
-	log       *slog.Logger
-	sessions  sync.Map
+	cfg         config.Config
+	root        *workspace.Root
+	projects    *projects.Manager
+	bridge      *upstream.Bridge
+	memory      *memory.Store
+	skills      *skills.Reader
+	artifacts   *artifacts.Store
+	schema      *connectorschema.Store
+	schemaVer   string
+	diff        *diffmgr.Manager
+	diffKey     string
+	ingress     *ingress.Downloader
+	chat        *markdownchat.Store
+	tickets     *agenttickets.Manager
+	exec        *execsession.Manager
+	server      *mcp.Server
+	http        *http.Server
+	listener    net.Listener
+	token       string
+	log         *slog.Logger
+	diagnostics *mcpdiag.Recorder
+	sessions    sync.Map
 }
 
 func New(cfg config.Config, logger *slog.Logger) (*Runtime, error) {
@@ -181,13 +183,34 @@ func NewWithToken(cfg config.Config, logger *slog.Logger, token string) (*Runtim
 		generatedSkillsDir = filepath.Join(home, ".codexify-go", "generated-skills", sanitizeStateKey(cfg.Tunnel.TunnelID))
 		r.skills.AddRoot(generatedSkillsDir, "plugin")
 	}
-	bridge, err := upstream.ConnectAndRegister(context.Background(), cfg.MCP.Upstreams, r.server, logger, builtInToolNames(), cfg.ArtifactEgress.MaxFileBytes, generatedSkillsDir)
+	knownTools := builtInToolNames()
+	bridge, err := upstream.ConnectAndRegister(context.Background(), cfg.MCP.Upstreams, r.server, logger, knownTools, cfg.ArtifactEgress.MaxFileBytes, generatedSkillsDir)
 	if err != nil {
 		ln.Close()
 		r.exec.Close()
 		return nil, fmt.Errorf("connect upstream MCP servers: %w", err)
 	}
 	r.bridge = bridge
+	if cfg.MCP.Diagnostics.Enabled {
+		diagnostic, diagnosticErr := mcpdiag.New(mcpdiag.Options{
+			Directory:   cfg.MCP.Diagnostics.Directory,
+			MaxEvents:   cfg.MCP.Diagnostics.MaxEvents,
+			MaxDuration: cfg.MCP.Diagnostics.MaxDuration.Duration(),
+			KnownTools:  knownTools,
+			Logger:      logger,
+		})
+		if diagnosticErr != nil {
+			ln.Close()
+			r.exec.Close()
+			if r.bridge != nil {
+				r.bridge.Close()
+			}
+			return nil, fmt.Errorf("initialize MCP diagnostics: %w", diagnosticErr)
+		}
+		r.diagnostics = diagnostic
+		r.server.AddReceivingMiddleware(diagnostic.Middleware())
+		logger.Info("bounded MCP diagnostic capture enabled", "file", diagnostic.Path())
+	}
 
 	statelessHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return r.server
@@ -214,7 +237,11 @@ func NewWithToken(cfg config.Config, logger *slog.Logger, token string) (*Runtim
 	})
 
 	mux := http.NewServeMux()
-	mux.Handle(endpoint, r.auth(mcpHandler))
+	endpointHandler := r.auth(mcpHandler)
+	if r.diagnostics != nil {
+		endpointHandler = r.diagnostics.Handler(endpointHandler)
+	}
+	mux.Handle(endpoint, endpointHandler)
 	mux.HandleFunc("/health", r.health)
 	r.http = &http.Server{
 		Handler:           mux,
@@ -339,6 +366,11 @@ func (r *Runtime) Shutdown(ctx context.Context) error {
 	r.exec.Close()
 	if r.bridge != nil {
 		r.bridge.Close()
+	}
+	if r.diagnostics != nil {
+		// Diagnostic write errors must not turn a successful MCP shutdown into a
+		// retry-worthy protocol failure; the recorder reports them to the logger.
+		_ = r.diagnostics.Close()
 	}
 	return err
 }

@@ -65,6 +65,28 @@ func TestWindowsExtendedAccessRootSelectAndResumeOrdinaryProject(t *testing.T) {
 	}
 }
 
+func TestWindowsExtendedAccessRootNormalizesDefaultWorktreesRoot(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows path identity regression")
+	}
+	root := t.TempDir()
+	m, err := New(config.MCPConfig{
+		WorkspaceRoot: `\\?\` + root,
+		MultiProject:  true,
+		Worktrees: config.WorktreeConfig{
+			Mode: "auto",
+			Root: `\\?\` + filepath.Join(root, ".codexify-go", "worktrees"),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(root, ".codexify-go", "worktrees")
+	if !strings.EqualFold(m.cfg.Worktrees.Root, want) {
+		t.Fatalf("worktrees root = %q, want ordinary Windows path %q", m.cfg.Worktrees.Root, want)
+	}
+}
+
 func TestWorkspaceImportsExactLegacyRustBindingOnGoBindingMiss(t *testing.T) {
 	root := t.TempDir()
 	project := filepath.Join(root, "project-a")

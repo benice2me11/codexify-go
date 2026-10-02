@@ -347,7 +347,11 @@ func connectSource(ctx context.Context, spec config.UpstreamMCPConfig, logger *s
 		return nil, fmt.Errorf("unsupported transport %q", transportKind)
 	}
 
-	session, err := client.Connect(connectCtx, transport, nil)
+	var sessionOpts *mcp.ClientSessionOptions
+	if version := strings.TrimSpace(spec.ProtocolVersion); version != "" {
+		sessionOpts = &mcp.ClientSessionOptions{ProtocolVersion: version}
+	}
+	session, err := client.Connect(connectCtx, transport, sessionOpts)
 	if err != nil {
 		return nil, err
 	}

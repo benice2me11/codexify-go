@@ -59,17 +59,26 @@ type ServiceConfig struct {
 }
 
 type MCPConfig struct {
-	WorkspaceRoot       string              `json:"workspaceRoot"`
-	AuthEnabled         bool                `json:"authEnabled"`
-	MaxRequestBodyBytes int64               `json:"maxRequestBodyBytes"`
-	MultiProject        bool                `json:"multiProject"`
-	BindingsDir         string              `json:"bindingsDir,omitempty"`
-	CloneDir            string              `json:"cloneDir,omitempty"`
-	ScratchDir          string              `json:"scratchDir,omitempty"`
-	ProjectScanDepth    int                 `json:"projectScanDepth,omitempty"`
-	Worktrees           WorktreeConfig      `json:"worktrees"`
-	Projects            []ProjectSpec       `json:"projects,omitempty"`
-	Upstreams           []UpstreamMCPConfig `json:"upstreams,omitempty"`
+	WorkspaceRoot       string               `json:"workspaceRoot"`
+	AuthEnabled         bool                 `json:"authEnabled"`
+	MaxRequestBodyBytes int64                `json:"maxRequestBodyBytes"`
+	MultiProject        bool                 `json:"multiProject"`
+	BindingsDir         string               `json:"bindingsDir,omitempty"`
+	CloneDir            string               `json:"cloneDir,omitempty"`
+	ScratchDir          string               `json:"scratchDir,omitempty"`
+	ProjectScanDepth    int                  `json:"projectScanDepth,omitempty"`
+	Worktrees           WorktreeConfig       `json:"worktrees"`
+	Projects            []ProjectSpec        `json:"projects,omitempty"`
+	Upstreams           []UpstreamMCPConfig  `json:"upstreams,omitempty"`
+	Diagnostics         MCPDiagnosticsConfig `json:"diagnostics"`
+}
+
+// MCPDiagnosticsConfig is opt-in and never enables a tunnel or changes routing.
+type MCPDiagnosticsConfig struct {
+	Enabled     bool     `json:"enabled"`
+	Directory   string   `json:"directory,omitempty"`
+	MaxEvents   int      `json:"maxEvents"`
+	MaxDuration Duration `json:"maxDuration"`
 }
 
 type WorktreeConfig struct {
@@ -84,17 +93,18 @@ type ProjectSpec struct {
 }
 
 type UpstreamMCPConfig struct {
-	Name      string            `json:"name"`
-	Transport string            `json:"transport,omitempty"`
-	Mode      string            `json:"mode,omitempty"`
-	Command   string            `json:"command,omitempty"`
-	Args      []string          `json:"args,omitempty"`
-	Workdir   string            `json:"workdir,omitempty"`
-	Env       map[string]string `json:"env,omitempty"`
-	URL       string            `json:"url,omitempty"`
-	Headers   map[string]string `json:"headers,omitempty"`
-	Required  bool              `json:"required,omitempty"`
-	Timeout   Duration          `json:"timeout,omitempty"`
+	Name            string            `json:"name"`
+	Transport       string            `json:"transport,omitempty"`
+	Mode            string            `json:"mode,omitempty"`
+	ProtocolVersion string            `json:"protocolVersion,omitempty"`
+	Command         string            `json:"command,omitempty"`
+	Args            []string          `json:"args,omitempty"`
+	Workdir         string            `json:"workdir,omitempty"`
+	Env             map[string]string `json:"env,omitempty"`
+	URL             string            `json:"url,omitempty"`
+	Headers         map[string]string `json:"headers,omitempty"`
+	Required        bool              `json:"required,omitempty"`
+	Timeout         Duration          `json:"timeout,omitempty"`
 }
 
 type MemoryConfig struct {
@@ -192,6 +202,10 @@ func Default() Config {
 			AuthEnabled:         true,
 			MaxRequestBodyBytes: 4 << 20,
 			ProjectScanDepth:    2,
+			Diagnostics: MCPDiagnosticsConfig{
+				MaxEvents:   20000,
+				MaxDuration: Duration(10 * time.Minute),
+			},
 			Worktrees: WorktreeConfig{
 				Mode: "auto",
 			},
@@ -279,6 +293,7 @@ func (c *Config) expand(base string) {
 		return filepath.Clean(filepath.Join(base, v))
 	}
 	c.Log.File = expand(c.Log.File)
+	c.MCP.Diagnostics.Directory = expand(c.MCP.Diagnostics.Directory)
 	if c.Memory.Dir != "" {
 		c.Memory.Dir = expand(c.Memory.Dir)
 	}
@@ -377,6 +392,17 @@ func (c Config) Validate() error {
 	}
 	if c.MCP.MaxRequestBodyBytes <= 0 {
 		errs = append(errs, errors.New("mcp.maxRequestBodyBytes must be > 0"))
+	}
+	if c.MCP.Diagnostics.Enabled {
+		if strings.TrimSpace(c.MCP.Diagnostics.Directory) == "" {
+			errs = append(errs, errors.New("mcp.diagnostics.directory is required when enabled"))
+		}
+		if c.MCP.Diagnostics.MaxEvents < 4 || c.MCP.Diagnostics.MaxEvents > 100000 {
+			errs = append(errs, errors.New("mcp.diagnostics.maxEvents must be between 4 and 100000"))
+		}
+		if d := c.MCP.Diagnostics.MaxDuration.Duration(); d <= 0 || d > time.Hour {
+			errs = append(errs, errors.New("mcp.diagnostics.maxDuration must be > 0 and <= 1h"))
+		}
 	}
 	if c.Memory.MaxBytes <= 0 {
 		errs = append(errs, errors.New("memory.maxBytes must be > 0"))

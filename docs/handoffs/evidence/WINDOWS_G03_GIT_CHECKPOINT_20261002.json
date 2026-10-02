@@ -1,0 +1,641 @@
+{
+  "schemaVersion": 1,
+  "candidateId": "20261001T160710Z-node-repl-compat",
+  "baseCommit": "1098803bb3861e3f5d1a2702e4f5fda42afe0546",
+  "sourceCommit": "eb29089f58cfa23020d76605cd4ec5be523f5632",
+  "operatorToolingCommit": "064664e92bc80a38307c55ad4e1665edfb2bb072",
+  "preparationCommit": "dc86f0b913a98935868a498192edce8ca98bee94",
+  "g02Commit": "58b85edb5d0dfe4a67ce971b37ca081c56aef2f5",
+  "branch": "codex/windows-cutover-g03",
+  "frozenSourceManifestSha256": "ECA7EF44DA3ED485564EF1D50983C48110133F5BF1C289D3EAB664421BCC48F6",
+  "frozenManifestFileCount": 139,
+  "sourceSelection": "All 108 frozen non-documentation files. Their Git blob bytes match the frozen file hashes. Dated documentation is versioned separately; private evidence is retained outside Git.",
+  "sourceFiles": [
+    {
+      "Path": ".gitattributes",
+      "Sha256": "07975FD056E92AFA7449A1836A9816EF28564272896807CFF8EEEB63D8CEC7B7",
+      "Length": 79
+    },
+    {
+      "Path": ".github/workflows/ci.yml",
+      "Sha256": "F9DCB8C555C411D8FCEC87BBC955084256A2517E16A6E160814ADE74441356B2",
+      "Length": 2537
+    },
+    {
+      "Path": ".github/workflows/linux-service-smoke.yml",
+      "Sha256": "27447566F8E7BED960567F7720A634AED9B4DCF781A2CA143BCFF37F313B9602",
+      "Length": 4060
+    },
+    {
+      "Path": ".github/workflows/release.yml",
+      "Sha256": "2BD5E640F771986C927E87C03581D09BE4B02A5886788245B02AF57F7AF80423",
+      "Length": 8170
+    },
+    {
+      "Path": ".github/workflows/release-candidate.yml",
+      "Sha256": "094EA904BB396BE6C4F67A1EEB8443CC5AB8A7F85A561231A7800E14A0948467",
+      "Length": 6461
+    },
+    {
+      "Path": ".gitignore",
+      "Sha256": "CED7676901367B778233B33D09D69B2A21121E906D08B462CE8A930439AE0261",
+      "Length": 55
+    },
+    {
+      "Path": "ARCHITECTURE.md",
+      "Sha256": "76A57EADEDBA6E43E8582443F090E2F2DE15029C31F62387A8E5A3B62278D296",
+      "Length": 23331
+    },
+    {
+      "Path": "cmd/codexify-go/main.go",
+      "Sha256": "1F7F84581F64B2F65A9292C6444EB91F3D0291F2CE0A2AB142B6B3E3DCA2B4B2",
+      "Length": 10617
+    },
+    {
+      "Path": "config.example.json",
+      "Sha256": "C2029C3014141CD7EA7B0042589B173FC5BA644BB3E3FA90394AF87351275344",
+      "Length": 2122
+    },
+    {
+      "Path": "go.mod",
+      "Sha256": "9BE099BEB377FA0E4FC66EE0FCA9117C7666E018E64A1D50618DC7A9DCD89C79",
+      "Length": 606
+    },
+    {
+      "Path": "go.sum",
+      "Sha256": "8020DFD936EE1998F26270F226F7E1F174E479D5F901E44277213E7B0F8864A1",
+      "Length": 3102
+    },
+    {
+      "Path": "internal/agenttickets/lock_other.go",
+      "Sha256": "87E7D414676F4E0380AE5EC8DAF39C9A67A7309198898F89D110808EDFBD741F",
+      "Length": 445
+    },
+    {
+      "Path": "internal/agenttickets/lock_windows.go",
+      "Sha256": "2290D5B059BDD7CA5A76427D64D0F1F5F618309B2779B069227B5C998E5FC1DB",
+      "Length": 633
+    },
+    {
+      "Path": "internal/agenttickets/tickets.go",
+      "Sha256": "2438C8A3E95B15B8D3CC642B467DCBAA0BF7943446DF63FB27CE2DA91FB3C5BB",
+      "Length": 17970
+    },
+    {
+      "Path": "internal/agenttickets/tickets_test.go",
+      "Sha256": "306587BCA2BCE8C91A8ABF7119CFAAF17AD86874C91A307698EBC33A970F94CF",
+      "Length": 5854
+    },
+    {
+      "Path": "internal/agenttools/files.go",
+      "Sha256": "CF4B98697DA7A5C184F9A94BA59B37F9A04A3E917E23123DCAC4E4C6A0869BD2",
+      "Length": 6961
+    },
+    {
+      "Path": "internal/agenttools/files_test.go",
+      "Sha256": "9309015914680407402399F8654D76547BF9B84A6CD19369E1F87D83D1FF2C5C",
+      "Length": 1026
+    },
+    {
+      "Path": "internal/agenttools/git.go",
+      "Sha256": "057D9A0C6A28E54C7D8662C0F3D3097571DE33FA166B25610499D9DBA0F3543A",
+      "Length": 1796
+    },
+    {
+      "Path": "internal/app/app.go",
+      "Sha256": "042528A775A98305AFE82432A605A732BC6E64F29B0F4C0E2F1D9AD2A80C449B",
+      "Length": 7685
+    },
+    {
+      "Path": "internal/artifacts/store.go",
+      "Sha256": "7C9E73C5DC34BFF77C4358B03E2D11855114689EED8FC3A8A7984A998171297A",
+      "Length": 8840
+    },
+    {
+      "Path": "internal/artifacts/store_test.go",
+      "Sha256": "4AFBF32F552556ADF9E1A4E9087DF1EBB1FDD10AEE7AE26933A61C97E4C4ABF4",
+      "Length": 4105
+    },
+    {
+      "Path": "internal/buildinfo/buildinfo.go",
+      "Sha256": "9AFF7F9A5573280B6CCBDAE72E5643C5D3E469BB2ECF635847D11FE2AE0D7FBB",
+      "Length": 106
+    },
+    {
+      "Path": "internal/config/config.go",
+      "Sha256": "2B0FEB8BDE2353E554039F5ADCC9C3E9FD49D5AD117F08482572A4DF1D81E0AE",
+      "Length": 20032
+    },
+    {
+      "Path": "internal/config/config_test.go",
+      "Sha256": "404A9C7B3DA15D1CD24E5BB3EFCE2A7AEF535BF61B722B284EB3007A936517E3",
+      "Length": 2499
+    },
+    {
+      "Path": "internal/config/diagnostics_test.go",
+      "Sha256": "EDB944F3B4A74CE0382B4709C73756E7F12359BFB8E63BE4487E3DA0268B4001",
+      "Length": 1709
+    },
+    {
+      "Path": "internal/connectorschema/store.go",
+      "Sha256": "F5C5D15CB360BE0B9376D539D88CCAFA755933E4A7E3539064269953BF097AA3",
+      "Length": 6035
+    },
+    {
+      "Path": "internal/connectorschema/store_test.go",
+      "Sha256": "3034DC0458072B71BF0208B76F76DED002E2176C6DF5E1EAF5157746D752FD30",
+      "Length": 2851
+    },
+    {
+      "Path": "internal/diff/diff.go",
+      "Sha256": "AC3E4282BF45BA0E92EF858BCE978ABD665776C85119C73F15081975B848A57F",
+      "Length": 24370
+    },
+    {
+      "Path": "internal/diff/diff_test.go",
+      "Sha256": "FF6B3150E6990E07306BC45EF54A7A51397DF2FBC4AD45E2BA501B9E3AA2F124",
+      "Length": 7125
+    },
+    {
+      "Path": "internal/execsession/manager.go",
+      "Sha256": "4A8E790C4FB49558FFF621A29B4F8B063870F2E65BB61C55B03C1DD16EB04A91",
+      "Length": 5128
+    },
+    {
+      "Path": "internal/execsession/manager_windows_test.go",
+      "Sha256": "732BBAB6A045912CA023D4D98656C66A94137514CEB9D08411031845F30B5419",
+      "Length": 1920
+    },
+    {
+      "Path": "internal/execsession/process_other.go",
+      "Sha256": "67E37C5F6AE3D4800FB973C1B9EEF116471D78C7FFCA3A48C53727486F4F79F5",
+      "Length": 257
+    },
+    {
+      "Path": "internal/execsession/process_windows.go",
+      "Sha256": "43B7343BE2CF413779961894CB6F0B899C1D4DB4283B7508A0F7FD0BDC32CE12",
+      "Length": 436
+    },
+    {
+      "Path": "internal/health/urlfile.go",
+      "Sha256": "D07BC2C561CD2CDE4511A537121000D30CC3641DD48BB46B5E5AC7B522E38BCA",
+      "Length": 2298
+    },
+    {
+      "Path": "internal/health/urlfile_test.go",
+      "Sha256": "3FB2424AB450DE681A4F41ABF23A5C9FB8AC40452BE71FA7922EB23930DEAC3B",
+      "Length": 1000
+    },
+    {
+      "Path": "internal/ingress/ingress.go",
+      "Sha256": "686009876FC6F4A5746EC0F2F4F1E1C54DADE295A32E11D99A73CD9722CD9FCD",
+      "Length": 13201
+    },
+    {
+      "Path": "internal/ingress/ingress_test.go",
+      "Sha256": "E2DE3EC265912C89CEED9C6CDD2776A419B6E36C102A7AD8E203F6123D565D49",
+      "Length": 4831
+    },
+    {
+      "Path": "internal/logging/logging.go",
+      "Sha256": "82983E3283C3019B4DF68764B5393C2E3AA86252417F790471A04A38C57D4500",
+      "Length": 508
+    },
+    {
+      "Path": "internal/logging/logging_test.go",
+      "Sha256": "DCA48F013D5423E16CA4A22FFFA5B04A65B140A68DF423E7DFB78859F1478467",
+      "Length": 1182
+    },
+    {
+      "Path": "internal/markdownchat/chat.go",
+      "Sha256": "42FBAA30AED82CA43A932E8DFC61F294E90D7E3564BACFFFDF9270CFD2F7465A",
+      "Length": 18401
+    },
+    {
+      "Path": "internal/markdownchat/chat_test.go",
+      "Sha256": "0781C45A60DA8813898E08B92B76489289586EFC1E8980CEEE539ABD61B01735",
+      "Length": 6888
+    },
+    {
+      "Path": "internal/mcpdiag/analyze.go",
+      "Sha256": "173D5E2E09B1F59207ABA0F1AAAAAEFB12DA819FD970F01A8E5AFBF29DE30800",
+      "Length": 8925
+    },
+    {
+      "Path": "internal/mcpdiag/analyze_test.go",
+      "Sha256": "929F67191D90480079CA84FD5DC0DA9D3685DB2F2B4D6FE82F00DB148B343119",
+      "Length": 3605
+    },
+    {
+      "Path": "internal/mcpdiag/recorder.go",
+      "Sha256": "7AFB7AF3DF2CA1DA7915DBD182906A71F0C0BC41AF98C80243360D98DB962C08",
+      "Length": 14011
+    },
+    {
+      "Path": "internal/mcpdiag/recorder_test.go",
+      "Sha256": "F1B41F325EDD394FB906ECF622B3805AE1C56187EB15CF44BCB3142477A9892F",
+      "Length": 16227
+    },
+    {
+      "Path": "internal/mcpserver/diagnostics_test.go",
+      "Sha256": "13058E27AC1A52D3948753E8C39CF26A691EC2D1CD81AA8C3611A343EC68FD89",
+      "Length": 6366
+    },
+    {
+      "Path": "internal/mcpserver/server.go",
+      "Sha256": "D38B2D70E6E82FBF84DC0BDF3EF87CABF2C77DE2B9C2663736A8D42BC839C611",
+      "Length": 54804
+    },
+    {
+      "Path": "internal/mcpserver/server_test.go",
+      "Sha256": "31AF6BE8EEC065B94A42A3D6D8A018BFC2E0FDEBAD6AC473BABEE19D2E9D31BD",
+      "Length": 29408
+    },
+    {
+      "Path": "internal/memory/store.go",
+      "Sha256": "ABF4168D338AF83633104F94876012BF225693BD6F5943F148FD12A60621C1CC",
+      "Length": 5677
+    },
+    {
+      "Path": "internal/memory/store_test.go",
+      "Sha256": "5E8869858BF8A7D5D9514D43243298DD27383200097D1D28E7C1D3E526AD2679",
+      "Length": 1445
+    },
+    {
+      "Path": "internal/patch/patch.go",
+      "Sha256": "9B8C337497F2664CAD99731087127A063F82F9641BB191D74E2912A2766DBA3E",
+      "Length": 12323
+    },
+    {
+      "Path": "internal/patch/patch_test.go",
+      "Sha256": "2ECBEA8C834C3788B77DF5C2B2879A67B368D673AF66C1793A4B212ADF8A6333",
+      "Length": 4160
+    },
+    {
+      "Path": "internal/projectdoc/projectdoc.go",
+      "Sha256": "1358FD529B5C583DB8019798F4975EB2D698060511DF978F9AF8D112F1913DDE",
+      "Length": 3481
+    },
+    {
+      "Path": "internal/projectdoc/projectdoc_test.go",
+      "Sha256": "22574D53742ECBC3B82E4349FC2D5849153099BD32EE365F6A4F0C2E7858416A",
+      "Length": 2289
+    },
+    {
+      "Path": "internal/projects/bindings.go",
+      "Sha256": "5805DBB1E420C606B309E7C43AB3C5E670E4BA9021FA67D5AC2CE5823ADF887D",
+      "Length": 5025
+    },
+    {
+      "Path": "internal/projects/catalog.go",
+      "Sha256": "6B1DB35AE583E4F77AE8B1D21105AAD6BC942B1A5337540CD812B2E5DB912C3A",
+      "Length": 4404
+    },
+    {
+      "Path": "internal/projects/identity.go",
+      "Sha256": "5C193AB6AE2F720E36B557D6AA94ABC0666987A9BB4EC6C86C681067211786AF",
+      "Length": 1936
+    },
+    {
+      "Path": "internal/projects/legacy_binding.go",
+      "Sha256": "9DE76C9DCEA15B03B3EA6094C869742D544E24045C5E36EC4E6E1F209E3D9665",
+      "Length": 3559
+    },
+    {
+      "Path": "internal/projects/lifecycle.go",
+      "Sha256": "C7CF8400ECF25C9B0FC976F6F4E002141B9AC41163BC0F64AB51715050ED28C3",
+      "Length": 9278
+    },
+    {
+      "Path": "internal/projects/manager.go",
+      "Sha256": "6263FFCBAD43AFB27FB45CD77C9F31A2DFEAFD000E704CD059CE3871FBCB894E",
+      "Length": 11299
+    },
+    {
+      "Path": "internal/projects/projects_test.go",
+      "Sha256": "36523D09295AC123246CB1C53D7553A92AA7B7BA4C5BFA758E8A75C69F6598C7",
+      "Length": 16115
+    },
+    {
+      "Path": "internal/projects/repository.go",
+      "Sha256": "58F67F64D0C94F29DFCF24B142E498B2CC640DE96631CBCF7A8968C9E156B6B3",
+      "Length": 15552
+    },
+    {
+      "Path": "internal/projects/worktree.go",
+      "Sha256": "2832656E9929704770CFD201BD186227126724BAEA57C478480621BE61096CD5",
+      "Length": 5209
+    },
+    {
+      "Path": "internal/selfupdate/apply_other.go",
+      "Sha256": "23B265B61D5CC7154720170954F2DD5CA481D0BE4B40D01A6BCB5727BAD6F95F",
+      "Length": 898
+    },
+    {
+      "Path": "internal/selfupdate/apply_windows.go",
+      "Sha256": "DE36774979709C79FB5FA12D99EAAB835FA7FD802F4CE16FB9CB671EA2D8DEF6",
+      "Length": 3762
+    },
+    {
+      "Path": "internal/selfupdate/selfupdate.go",
+      "Sha256": "781854A4D633D9547D77936329F8CEF18E345A95AB34D54CD2C1D7AA1D96E2EF",
+      "Length": 13358
+    },
+    {
+      "Path": "internal/selfupdate/selfupdate_test.go",
+      "Sha256": "4CACE0D06ED9716B20DA3FE83FB1F7E53144258B08D363F0E8DBFECAE49115B2",
+      "Length": 5927
+    },
+    {
+      "Path": "internal/service/service_darwin.go",
+      "Sha256": "C975849D84FCBCFDA3E39306FC6D9887F2FB0BE1358548C1B2B307F5A7B1DC79",
+      "Length": 8273
+    },
+    {
+      "Path": "internal/service/service_darwin_test.go",
+      "Sha256": "D363E06DF07DA81ABD83C3976659A65D1161504FD1444F01263FBFFC316AE3D9",
+      "Length": 1671
+    },
+    {
+      "Path": "internal/service/service_linux.go",
+      "Sha256": "537AF48B981C61A3A3580D83514BFCFF480EA3B419A15FCB17F604967C441568",
+      "Length": 14088
+    },
+    {
+      "Path": "internal/service/service_linux_test.go",
+      "Sha256": "BFC4AD00E9494756793AE0624C6A7C808F6BB2450AE21B89F3BB93B6B2821794",
+      "Length": 9992
+    },
+    {
+      "Path": "internal/service/service_other.go",
+      "Sha256": "1B224522171FCBE13AD020F9F3130DFD98880A88C853530636E7BA8C1E1B35C8",
+      "Length": 1025
+    },
+    {
+      "Path": "internal/service/service_windows.go",
+      "Sha256": "9E54DA3FADF2F89684CE05FD5356B30346130B1C4FF23A4705911BBDE14D3A90",
+      "Length": 5649
+    },
+    {
+      "Path": "internal/skills/plugins.go",
+      "Sha256": "26C33359EA2E3219F9187F3885FE5CC05C066D45CDC758E929817F45C7BB84F0",
+      "Length": 14974
+    },
+    {
+      "Path": "internal/skills/plugins_test.go",
+      "Sha256": "FBE9937A890397FB7D20E6F2B92E3E30CA4944DE5C2A1CA2355FE88A8FCBD376",
+      "Length": 5711
+    },
+    {
+      "Path": "internal/skills/skills.go",
+      "Sha256": "D127ED8BB7D037CE719CCF22E08C519A85B91957889CC794E7C655CFDC5EB610",
+      "Length": 11990
+    },
+    {
+      "Path": "internal/skills/skills_test.go",
+      "Sha256": "E581D20E3E3C8238CA0D7D46E4F1613B95E9219CAE14A89C9FEC461F00FB0213",
+      "Length": 2333
+    },
+    {
+      "Path": "internal/supervisor/backoff.go",
+      "Sha256": "E65945B0B63346D3FB6B32C3D635866DBD6268EEC77B6B7AF46F8729D1835486",
+      "Length": 508
+    },
+    {
+      "Path": "internal/supervisor/backoff_test.go",
+      "Sha256": "04CF2DE260B24F3BDC6A9A1B378AFDCB633C18C1A8A5848BF08BC2C5CC17FC89",
+      "Length": 532
+    },
+    {
+      "Path": "internal/supervisor/command.go",
+      "Sha256": "5E3DFD456658AD7466546B706D4DBD17DC5DFC560CE684B29DBB5EE07E8CE9B0",
+      "Length": 2019
+    },
+    {
+      "Path": "internal/supervisor/command_windows_test.go",
+      "Sha256": "0C90B7DEAAEEF390CF53ED99E60080375DCA0A6F5E400E21B5C9C3E084E06DA8",
+      "Length": 2447
+    },
+    {
+      "Path": "internal/supervisor/process_other.go",
+      "Sha256": "B6C16CCB4B17DB330BAE77CC59616CBD3F516794CF1BC560EAC1E673FF48BE53",
+      "Length": 974
+    },
+    {
+      "Path": "internal/supervisor/process_other_test.go",
+      "Sha256": "26A650A2E62F38A1EBC3C1DB2D20AE78C9BE90107ABCE1D992F5ECB7CA978F56",
+      "Length": 2906
+    },
+    {
+      "Path": "internal/supervisor/process_windows.go",
+      "Sha256": "EF19B925DCB9FA16E368DE26026B00141038C22120059E4FEF1723A96ED59A24",
+      "Length": 2025
+    },
+    {
+      "Path": "internal/supervisor/supervisor.go",
+      "Sha256": "84B83A632124EFC1B9E5B72B7D1752B3686CE3612E46999A7DF22077D899CBF7",
+      "Length": 3684
+    },
+    {
+      "Path": "internal/supervisor/supervisor_test.go",
+      "Sha256": "326F179BAE029DE52145CD6956EEC60DF5E436FA823ECE9D94D115BBAECEC032",
+      "Length": 1584
+    },
+    {
+      "Path": "internal/tunnel/factory.go",
+      "Sha256": "B1C18B4604FAD003279CAAE2BC00546822ECEF11934F2D5F929B7B1BCFE0ACBA",
+      "Length": 657
+    },
+    {
+      "Path": "internal/tunnel/runtime.go",
+      "Sha256": "A07799A47827BB58481DBD168BAD3C27C4E6A2F353E3B4BC61BDDECABDFC65CE",
+      "Length": 11647
+    },
+    {
+      "Path": "internal/tunnel/runtime_test.go",
+      "Sha256": "BC69C00867B9DEEFD174D4EDE990A45AF31727C6B77FE8E8DA2E1DE6CD7A734A",
+      "Length": 2175
+    },
+    {
+      "Path": "internal/ui/resources.go",
+      "Sha256": "AACDFD131BFB0D379601FBCFD18406ACF0524BEB4AB365B212FAB99AE4761ADA",
+      "Length": 12123
+    },
+    {
+      "Path": "internal/ui/resources_test.go",
+      "Sha256": "9540B85FF53FBDA44C8E7A85CCA81D2005B96EC9A1069EE7516B6BC50BDAD3F5",
+      "Length": 945
+    },
+    {
+      "Path": "internal/ui/widget_runtime_test.mjs",
+      "Sha256": "FEF897912255ECA49DB37C3921628EA2E89D3897262995FAF7E4A96C1CC81FE9",
+      "Length": 7960
+    },
+    {
+      "Path": "internal/upstream/bridge.go",
+      "Sha256": "719F4DE9E3C6DAB610DB9869B3E008E149840EE08540FAD7E575A49C38586F57",
+      "Length": 22163
+    },
+    {
+      "Path": "internal/upstream/bridge_test.go",
+      "Sha256": "D08C0788DD07DE1BA7C317999B3AA85ACC07F60E2A669A93B0D0073E2B53EA66",
+      "Length": 11717
+    },
+    {
+      "Path": "internal/userworker/factory_other.go",
+      "Sha256": "AFE8D1371248D5EACB20621BA8CAF72FDF1B332ECDBAE80133813C3DDFFAD773",
+      "Length": 433
+    },
+    {
+      "Path": "internal/userworker/factory_windows.go",
+      "Sha256": "B7A0405A8DBD63B002F11FEDD7C125550F655162247AFD6EB0EA7025F15A5CF1",
+      "Length": 7532
+    },
+    {
+      "Path": "internal/userworker/factory_windows_test.go",
+      "Sha256": "5F039249EE70194397DB337B8796D2593F86276F1A0A1025469358149CA17347",
+      "Length": 534
+    },
+    {
+      "Path": "internal/worker/worker.go",
+      "Sha256": "8653FAD40E303C10E44354251ABF18A911BF976EA426AE050189F72D7BD68D28",
+      "Length": 1665
+    },
+    {
+      "Path": "internal/workspace/root.go",
+      "Sha256": "C7D400F32D2E702E313BDA6F4EFD7D39DF8330D660E9505EBCECB8242D82F39C",
+      "Length": 4901
+    },
+    {
+      "Path": "internal/workspace/root_test.go",
+      "Sha256": "FE5A2F4ED2CEC597C71166D64D7E5037597283F73031E1DE5ABE24DF99F2767A",
+      "Length": 2827
+    },
+    {
+      "Path": "LICENSE",
+      "Sha256": "FEC821E5BFB0519552167A58153FD748A8E06454EA067FB1D6DEA7E756387ABC",
+      "Length": 1068
+    },
+    {
+      "Path": "README.md",
+      "Sha256": "7B845015AD979A3EE66BC502D415A0BA8777BD16841F0BB8497C4219610CBF42",
+      "Length": 26835
+    },
+    {
+      "Path": "tools/forensics/burstlog/main.go",
+      "Sha256": "F29F057E15E154AD5A3B8B834F34C4E953A6F559A1ADCA25B1B8042C778E7130",
+      "Length": 8196
+    },
+    {
+      "Path": "tools/forensics/burstlog/main_test.go",
+      "Sha256": "BEC417DA04B3B8556CD9EFCFD331AC95E9D3A1E92D4AFDFCC5BE6D6DC6964D3B",
+      "Length": 3127
+    },
+    {
+      "Path": "tools/forensics/burstlog/README.md",
+      "Sha256": "B8F62B57227DB7B3593B0579A40FB6B52EC920DC56B834A65F9827B0363D2A35",
+      "Length": 2325
+    },
+    {
+      "Path": "tools/forensics/mcptrace/main.go",
+      "Sha256": "8834CBBCA9F94528172D2D1743FB34F646A50D542CE2567E09CB285BED0E5778",
+      "Length": 1081
+    },
+    {
+      "Path": "tools/forensics/mcptrace/main_test.go",
+      "Sha256": "997BEB1714185548735A0548668178AA3E8B8F2F68C5F5D5E9BC6AE65BCD6752",
+      "Length": 1252
+    },
+    {
+      "Path": "tools/forensics/mcptrace/README.md",
+      "Sha256": "59E3B51309763C9ACFCC50F631897D71A39A4D93D17B8481BDC8CBE68A6525C5",
+      "Length": 6195
+    }
+  ],
+  "operatorToolingVersion": "operator-tooling-v3",
+  "operatorToolingFiles": [
+    {
+      "path": "tools/windows/cutover-v2/CutoverGuard.psm1",
+      "sha256": "8D76B0C54154F38CAC604E3A6FBF32BD35D72249BA2E5CB8E913501719FFAAB2",
+      "bytes": 5139
+    },
+    {
+      "path": "tools/windows/cutover-v2/Prepare-RecoverySnapshot.ps1",
+      "sha256": "759229BD9098A63A036D6DE191E741AE2179B6C086B9A60786075E1291283C1D",
+      "bytes": 4792
+    },
+    {
+      "path": "tools/windows/cutover-v2/Rollback-To-Rust.ps1",
+      "sha256": "6EBF0D72667F062194C43644D6ACD361005F6E3F15B952ABA8FB1D15AE9F035F",
+      "bytes": 8289
+    },
+    {
+      "path": "tools/windows/cutover-v2/Test-CutoverLogCompatibility.ps1",
+      "sha256": "AE2605F92A7D7B9EAF5AA9EC34193A400853093C8551B728C7DA03EB32512BB4",
+      "bytes": 3985
+    },
+    {
+      "path": "tools/windows/cutover-v2/Test-CutoverTooling.ps1",
+      "sha256": "6121A6693F1CA76BE90AA8FDC93CA26219A9A0FBB6486F18BCD63FC1C9A0B8A5",
+      "bytes": 8091
+    },
+    {
+      "path": "tools/windows/cutover-v2/Test-CutoverWatcherLifecycle.ps1",
+      "sha256": "CE3D74CBB48A88D74769337AEF77E9FABDF688B03C3ECE7D3D458DA49293938A",
+      "bytes": 4253
+    },
+    {
+      "path": "tools/windows/cutover-v2/Watch-Cutover.ps1",
+      "sha256": "B5E0F8E4E2E764CCC766AFC55E65F0FAFDABBBFA18A9594CAAE4ABD7D1D3F3B8",
+      "bytes": 7640
+    }
+  ],
+  "binarySha256": "61E2A086445A1B10E7537E720119B0855E17515A58A5B3F8BDCA914075B07DD6",
+  "rebuildByteIdentical": true,
+  "build": {
+    "go": "go1.26.5",
+    "GOOS": "windows",
+    "GOARCH": "amd64",
+    "CGO_ENABLED": "0",
+    "flags": [
+      "-trimpath",
+      "-buildvcs=false"
+    ]
+  },
+  "checks": {
+    "passedGoTests": 155,
+    "passedGoPackages": 27,
+    "skippedGoTests": [
+      "TestResolveRejectsSymlinkEscape: Windows symlink privilege unavailable"
+    ],
+    "goVet": "PASS",
+    "goModVerify": "PASS",
+    "widgetRuntimeTest": "PASS with Node v24.19.0",
+    "cutoverToolingFixture": "PASS",
+    "logCompatibility": "PASS (10 cases)",
+    "watcherLifecycle": "PASS"
+  },
+  "historicalGateStatus": {
+    "G00": "PASS",
+    "G01": "PASS",
+    "G02": "PASS",
+    "G03": "PASS",
+    "G04": "PENDING",
+    "G05": "PENDING",
+    "G06": "PENDING",
+    "G07": "PENDING",
+    "G08": "PENDING",
+    "G09": "PENDING",
+    "G10": "PENDING",
+    "G11": "PENDING"
+  },
+  "runtimeObservation": {
+    "timeUtc": "2026-10-02T15:21:19.8876517Z",
+    "service": "CodexifyGo",
+    "state": "Stopped",
+    "startMode": "Manual",
+    "processId": 0,
+    "serviceActionsPerformedByThisCheckpoint": false
+  },
+  "privateEvidenceRelativeToCandidateRun": "evidence/git-checkpoint-20261002T151449Z"
+}

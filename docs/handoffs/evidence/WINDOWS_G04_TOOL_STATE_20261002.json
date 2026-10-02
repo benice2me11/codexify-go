@@ -1,0 +1,680 @@
+{
+  "gate": "G04",
+  "status": "PASS",
+  "candidateId": "20261001T160710Z-node-repl-compat",
+  "analyzedAtUtc": "2026-10-02T16:38:30.8802463+00:00",
+  "hostedCalls": 36,
+  "expectedToolErrors": 4,
+  "localUnauthenticatedHttpStatus": 401,
+  "matchedStarts": 36,
+  "matchedEnds": 36,
+  "unaccountedToolCalls": 0,
+  "maxCallsInTenSeconds": 4,
+  "maxSameOperationInTenSeconds": 1,
+  "fixtureExactContent": true,
+  "mutationMarkerCount": 1,
+  "fixtureRemoved": true,
+  "delayedExec": {
+    "yielded": true,
+    "polledReturnedSession": true,
+    "stdinAccepted": true,
+    "exactOutput": true,
+    "exitCode": 7
+  },
+  "cancellation": [
+    {
+      "processId": 17144,
+      "firstAbsentAtUtc": "2026-10-02T19:25:50.4754911+03:00",
+      "secondsFromClientRequest": 0.8264911,
+      "secondsFromServerStart": 0.1709968
+    },
+    {
+      "processId": 19716,
+      "firstAbsentAtUtc": "2026-10-02T19:25:50.4576841+03:00",
+      "secondsFromClientRequest": 0.8086841,
+      "secondsFromServerStart": 0.1531898
+    }
+  ],
+  "firstCancellationTiming": "INVALID: observer array handling failed; processes were verified absent and a fresh second fixture supplied valid timing",
+  "state": {
+    "workspaceRoot": "C:\\Users\\FoxOS_User\\codexify-go",
+    "bindingSurvived": true,
+    "memoryTextSurvived": true,
+    "memoryFileHashSurvived": true,
+    "fixtureNoteRemoved": true
+  },
+  "guard": {
+    "observations": 499,
+    "nonContinue": 0,
+    "localSamples": 522,
+    "observationFailures": 0,
+    "goPresentSamplesWithoutReadyTunnel": 0,
+    "lastSampleAtUtc": "2026-10-02T19:38:30.1572769+03:00",
+    "lastService": {
+      "State": "Running",
+      "StartMode": "Manual",
+      "ProcessId": 2432
+    }
+  },
+  "captures": [
+    {
+      "phase": "start",
+      "path": "C:\\Users\\FoxOS_User\\.codexify-go\\cutover-v2\\20261001T160710Z-node-repl-compat\\private-traces\\capture\\mcp-trace-20261002T162024.593018900Z-c93251b3557e6b0a0785f5377237c7f5.jsonl",
+      "evidenceSnapshot": "C:\\Users\\FoxOS_User\\.codexify-go\\cutover-v2\\20261001T160710Z-node-repl-compat\\evidence\\g04-live-20261002T155913Z\\trace-snapshot-start.jsonl",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "startedAtUtc": "2026-10-02T16:20:24.5930189Z",
+      "deadlineUtc": "2026-10-02T16:30:24.5930189Z",
+      "lastEventAtUtc": "2026-10-02T16:27:43.7058942Z",
+      "events": 127,
+      "stopReason": "planned_same_profile_SCM_stop_before_budget",
+      "sha256": "F74BD59EE433F61A345CA81511423D1C25C076C36D2BF8E6EF8E288B188A0BE2"
+    },
+    {
+      "phase": "restart",
+      "path": "C:\\Users\\FoxOS_User\\.codexify-go\\cutover-v2\\20261001T160710Z-node-repl-compat\\private-traces\\capture\\mcp-trace-20261002T162816.393144700Z-d53153b6cd2c68d00ecbe01e89ed4540.jsonl",
+      "evidenceSnapshot": "C:\\Users\\FoxOS_User\\.codexify-go\\cutover-v2\\20261001T160710Z-node-repl-compat\\evidence\\g04-live-20261002T155913Z\\trace-snapshot-restart.jsonl",
+      "captureId": "d53153b6cd2c68d00ecbe01e89ed4540",
+      "startedAtUtc": "2026-10-02T16:28:16.3931447Z",
+      "deadlineUtc": "2026-10-02T16:38:16.3931447Z",
+      "lastEventAtUtc": "2026-10-02T16:29:29.1173741Z",
+      "events": 37,
+      "stopReason": "duration_budget_elapsed_while_idle_no_terminal_event_yet",
+      "sha256": "63DC7876832EAB0593E74E6EFA1C773B9C2431848A252D27BD0F54F5B659468E"
+    }
+  ],
+  "operations": [
+    {
+      "label": "environment_before",
+      "tool": "get_environment",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 2,
+      "startedAtUtc": "2026-10-02T16:20:31.5073Z",
+      "endedAtUtc": "2026-10-02T16:20:31.5078092Z",
+      "durationMs": 0.5092,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "brief_before",
+      "tool": "get_agent_brief",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 3,
+      "startedAtUtc": "2026-10-02T16:20:41.3168283Z",
+      "endedAtUtc": "2026-10-02T16:20:41.3493126Z",
+      "durationMs": 32.4843,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "file_create",
+      "tool": "write_file",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 4,
+      "startedAtUtc": "2026-10-02T16:20:56.0062434Z",
+      "endedAtUtc": "2026-10-02T16:20:56.047411Z",
+      "durationMs": 41.1676,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "file_read_initial",
+      "tool": "read_file",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 5,
+      "startedAtUtc": "2026-10-02T16:20:57.3761408Z",
+      "endedAtUtc": "2026-10-02T16:20:57.3766506Z",
+      "durationMs": 0.5098,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "file_patch",
+      "tool": "apply_patch",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 6,
+      "startedAtUtc": "2026-10-02T16:21:07.4858893Z",
+      "endedAtUtc": "2026-10-02T16:21:07.5262789Z",
+      "durationMs": 40.3896,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "file_read_patched",
+      "tool": "read_file",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 7,
+      "startedAtUtc": "2026-10-02T16:21:08.7699007Z",
+      "endedAtUtc": "2026-10-02T16:21:08.7704123Z",
+      "durationMs": 0.5116,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "fixture_glob",
+      "tool": "glob",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 8,
+      "startedAtUtc": "2026-10-02T16:21:16.0894792Z",
+      "endedAtUtc": "2026-10-02T16:21:16.0899907Z",
+      "durationMs": 0.5115,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "fixture_grep",
+      "tool": "grep",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 9,
+      "startedAtUtc": "2026-10-02T16:21:16.9538277Z",
+      "endedAtUtc": "2026-10-02T16:21:16.9548466Z",
+      "durationMs": 1.0189,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "git_status_bound_root",
+      "tool": "git_status",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 10,
+      "startedAtUtc": "2026-10-02T16:22:05.4838701Z",
+      "endedAtUtc": "2026-10-02T16:22:05.5011309Z",
+      "durationMs": 17.2608,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "fixture_git_and_once",
+      "tool": "exec_command",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 11,
+      "startedAtUtc": "2026-10-02T16:22:06.7651584Z",
+      "endedAtUtc": "2026-10-02T16:22:07.8552917Z",
+      "durationMs": 1090.1333,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "git_diff_bound_root_staged",
+      "tool": "git_diff",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 12,
+      "startedAtUtc": "2026-10-02T16:22:25.9422574Z",
+      "endedAtUtc": "2026-10-02T16:22:25.9570438Z",
+      "durationMs": 14.7864,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "recall_before",
+      "tool": "recall",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 13,
+      "startedAtUtc": "2026-10-02T16:22:26.9818795Z",
+      "endedAtUtc": "2026-10-02T16:22:26.9823888Z",
+      "durationMs": 0.5093,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "remember_fixture",
+      "tool": "remember",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 14,
+      "startedAtUtc": "2026-10-02T16:22:28.2117068Z",
+      "endedAtUtc": "2026-10-02T16:22:28.2122165Z",
+      "durationMs": 0.5097,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "skills_catalog",
+      "tool": "skills_list",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 15,
+      "startedAtUtc": "2026-10-02T16:22:36.3798118Z",
+      "endedAtUtc": "2026-10-02T16:22:36.3993742Z",
+      "durationMs": 19.5624,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "installed_skill_read",
+      "tool": "skills_read",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 16,
+      "startedAtUtc": "2026-10-02T16:23:05.4401562Z",
+      "endedAtUtc": "2026-10-02T16:23:05.4595207Z",
+      "durationMs": 19.3645,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "exec_delayed_start",
+      "tool": "exec_command",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 17,
+      "startedAtUtc": "2026-10-02T16:23:16.1793494Z",
+      "endedAtUtc": "2026-10-02T16:23:16.3196764Z",
+      "durationMs": 140.327,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "exec_delayed_poll",
+      "tool": "write_stdin",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 18,
+      "startedAtUtc": "2026-10-02T16:23:27.6003216Z",
+      "endedAtUtc": "2026-10-02T16:23:28.100491Z",
+      "durationMs": 500.1694,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "exec_delayed_stdin",
+      "tool": "write_stdin",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 19,
+      "startedAtUtc": "2026-10-02T16:23:29.3842823Z",
+      "endedAtUtc": "2026-10-02T16:23:29.4207469Z",
+      "durationMs": 36.4646,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "exec_cancel_start",
+      "tool": "exec_command",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 20,
+      "startedAtUtc": "2026-10-02T16:23:49.905829Z",
+      "endedAtUtc": "2026-10-02T16:23:50.4467037Z",
+      "durationMs": 540.8747,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "exec_cancel_identity_poll",
+      "tool": "write_stdin",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 21,
+      "startedAtUtc": "2026-10-02T16:24:11.0421574Z",
+      "endedAtUtc": "2026-10-02T16:24:11.5426698Z",
+      "durationMs": 500.5124,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "exec_cancel_interrupt",
+      "tool": "write_stdin",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 22,
+      "startedAtUtc": "2026-10-02T16:24:14.3089807Z",
+      "endedAtUtc": "2026-10-02T16:24:14.3532261Z",
+      "durationMs": 44.2454,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "negative_finished_exec_session",
+      "tool": "write_stdin",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 23,
+      "startedAtUtc": "2026-10-02T16:24:37.9042774Z",
+      "endedAtUtc": "2026-10-02T16:24:37.9042774Z",
+      "durationMs": null,
+      "expectedError": true,
+      "toolIsError": true
+    },
+    {
+      "label": "negative_missing_fixture",
+      "tool": "read_file",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 24,
+      "startedAtUtc": "2026-10-02T16:24:38.9115829Z",
+      "endedAtUtc": "2026-10-02T16:24:38.9120906Z",
+      "durationMs": 0.5077,
+      "expectedError": true,
+      "toolIsError": true
+    },
+    {
+      "label": "exec_cancel2_start",
+      "tool": "exec_command",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 25,
+      "startedAtUtc": "2026-10-02T16:25:22.2775171Z",
+      "endedAtUtc": "2026-10-02T16:25:22.8184514Z",
+      "durationMs": 540.9343,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "exec_cancel2_identity_poll",
+      "tool": "write_stdin",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 26,
+      "startedAtUtc": "2026-10-02T16:25:46.8065753Z",
+      "endedAtUtc": "2026-10-02T16:25:47.3069385Z",
+      "durationMs": 500.3632,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "exec_cancel2_interrupt",
+      "tool": "write_stdin",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 27,
+      "startedAtUtc": "2026-10-02T16:25:50.3044943Z",
+      "endedAtUtc": "2026-10-02T16:25:50.3484135Z",
+      "durationMs": 43.9192,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "negative_patch_context",
+      "tool": "apply_patch",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 28,
+      "startedAtUtc": "2026-10-02T16:26:10.9370864Z",
+      "endedAtUtc": "2026-10-02T16:26:10.9784948Z",
+      "durationMs": 41.4084,
+      "expectedError": true,
+      "toolIsError": true
+    },
+    {
+      "label": "negative_duplicate_memory_key",
+      "tool": "remember",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 29,
+      "startedAtUtc": "2026-10-02T16:26:12.2723175Z",
+      "endedAtUtc": "2026-10-02T16:26:12.2723175Z",
+      "durationMs": null,
+      "expectedError": true,
+      "toolIsError": true
+    },
+    {
+      "label": "recall_saved_before_restart",
+      "tool": "recall",
+      "captureId": "c93251b3557e6b0a0785f5377237c7f5",
+      "callId": 30,
+      "startedAtUtc": "2026-10-02T16:26:13.5242605Z",
+      "endedAtUtc": "2026-10-02T16:26:13.5247724Z",
+      "durationMs": 0.5119,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "environment_after_restart",
+      "tool": "get_environment",
+      "captureId": "d53153b6cd2c68d00ecbe01e89ed4540",
+      "callId": 2,
+      "startedAtUtc": "2026-10-02T16:28:34.1942024Z",
+      "endedAtUtc": "2026-10-02T16:28:34.1947132Z",
+      "durationMs": 0.5108,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "recall_after_restart",
+      "tool": "recall",
+      "captureId": "d53153b6cd2c68d00ecbe01e89ed4540",
+      "callId": 3,
+      "startedAtUtc": "2026-10-02T16:28:35.320569Z",
+      "endedAtUtc": "2026-10-02T16:28:35.320569Z",
+      "durationMs": null,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "file_after_restart",
+      "tool": "read_file",
+      "captureId": "d53153b6cd2c68d00ecbe01e89ed4540",
+      "callId": 4,
+      "startedAtUtc": "2026-10-02T16:28:36.5204877Z",
+      "endedAtUtc": "2026-10-02T16:28:36.5209979Z",
+      "durationMs": 0.5102,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "mutation_marker_after_restart",
+      "tool": "read_file",
+      "captureId": "d53153b6cd2c68d00ecbe01e89ed4540",
+      "callId": 5,
+      "startedAtUtc": "2026-10-02T16:28:37.4537127Z",
+      "endedAtUtc": "2026-10-02T16:28:37.4542227Z",
+      "durationMs": 0.51,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "forget_fixture_memory",
+      "tool": "forget_memory_note",
+      "captureId": "d53153b6cd2c68d00ecbe01e89ed4540",
+      "callId": 6,
+      "startedAtUtc": "2026-10-02T16:29:25.068485Z",
+      "endedAtUtc": "2026-10-02T16:29:25.0695027Z",
+      "durationMs": 1.0177,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "recall_after_cleanup",
+      "tool": "recall",
+      "captureId": "d53153b6cd2c68d00ecbe01e89ed4540",
+      "callId": 7,
+      "startedAtUtc": "2026-10-02T16:29:26.6568634Z",
+      "endedAtUtc": "2026-10-02T16:29:26.6573702Z",
+      "durationMs": 0.5068,
+      "expectedError": false,
+      "toolIsError": false
+    },
+    {
+      "label": "fixture_cleanup",
+      "tool": "exec_command",
+      "captureId": "d53153b6cd2c68d00ecbe01e89ed4540",
+      "callId": 8,
+      "startedAtUtc": "2026-10-02T16:29:27.9002732Z",
+      "endedAtUtc": "2026-10-02T16:29:29.1173741Z",
+      "durationMs": 1217.1009,
+      "expectedError": false,
+      "toolIsError": false
+    }
+  ],
+  "limitations": [
+    "G05-G11 are pending; deployment remains GO_TRIAL",
+    "This conversation remains bound to the original project; fixture edits and repository commits use the separate worktree",
+    "Rust has an existing plan and zero durable notes; the known update_plan and legacy-plan visibility gap remains open before final acceptance",
+    "No production code, candidate binary, declared profile or frozen v3 tooling changed",
+    "Cancellation was a disposable process fixture, not a service fault test or proof of G08/G09 recovery"
+  ],
+  "frozenAssets": [
+    {
+      "path": "candidate\\codexify-go.exe",
+      "sha256": "61E2A086445A1B10E7537E720119B0855E17515A58A5B3F8BDCA914075B07DD6"
+    },
+    {
+      "path": "profiles\\capture.json",
+      "sha256": "BCDF7B1362047E957F21B55704D69EC3783BD189B9D79759980499613D9A197F"
+    },
+    {
+      "path": "profiles\\normal.json",
+      "sha256": "75A086E6ED53124AD52B78CE35C83B8A04FC4D57A14D10C2C91645F5D692955D"
+    },
+    {
+      "path": "runtime\\openai-tunnel\\v0.0.15\\tunnel-client-runtime.exe",
+      "sha256": "A922D372D6BE0649156FBC1C8A040597F1F4BB5B4356890151D7875602593B1A"
+    }
+  ],
+  "finalRuntime": {
+    "verifiedAtUtc": "2026-10-02T16:36:04.1219991+00:00",
+    "service": {
+      "State": "Running",
+      "StartMode": "Manual",
+      "ProcessId": 2432,
+      "PathName": "\"C:\\Users\\FoxOS_User\\.codexify-go\\cutover-v2\\20261001T160710Z-node-repl-compat\\candidate\\codexify-go.exe\" service run --config \"C:\\Users\\FoxOS_User\\.codexify-go\\cutover-v2\\20261001T160710Z-node-repl-compat\\profiles\\capture.json\""
+    },
+    "processes": [
+      {
+        "ProcessId": 2432,
+        "ParentProcessId": 1140,
+        "ExecutablePath": "C:\\Users\\FoxOS_User\\.codexify-go\\cutover-v2\\20261001T160710Z-node-repl-compat\\candidate\\codexify-go.exe",
+        "CreationDateUtc": "2026-10-02T16:28:15.7200790Z"
+      },
+      {
+        "ProcessId": 15048,
+        "ParentProcessId": 2432,
+        "ExecutablePath": "C:\\Users\\FoxOS_User\\.codexify-go\\cutover-v2\\20261001T160710Z-node-repl-compat\\candidate\\codexify-go.exe",
+        "CreationDateUtc": "2026-10-02T16:28:15.7363040Z"
+      },
+      {
+        "ProcessId": 21544,
+        "ParentProcessId": 2432,
+        "ExecutablePath": "C:\\Users\\FoxOS_User\\.codexify-go\\cutover-v2\\20261001T160710Z-node-repl-compat\\runtime\\openai-tunnel\\v0.0.15\\tunnel-client-runtime.exe",
+        "CreationDateUtc": "2026-10-02T16:28:15.7841160Z"
+      }
+    ],
+    "disabledScheduledTasks": 11
+  },
+  "privateHelpers": [
+    {
+      "name": "Analyze-G04.ps1",
+      "sha256": "8BACF4721C0BDE7A8B327BC9A0D7C487165835AC620A42E7F1FF2AA974FE3532"
+    },
+    {
+      "name": "Invoke-G04SerializedRollback.ps1",
+      "sha256": "C6A82FB2DE877560D2739BD731C93984AA7971D93350B8F3AE09D3E33EBEDBF1"
+    },
+    {
+      "name": "Invoke-G04TrialStep.ps1",
+      "sha256": "42DDE40F6142F93FCE5750AC231E95BEC89F7953D22EB48D06AC8E118F7C7912"
+    },
+    {
+      "name": "Observe-G04Cancellation.ps1",
+      "sha256": "A246A679859723AC6856F59A33404A5BC44033E033A3C1358066B8E5BE7CE116"
+    },
+    {
+      "name": "Observe-G04Local.ps1",
+      "sha256": "636955164B19A1F3D114FE7609DE03BE1DA277C0811623AAEA1CE7E35E825C69"
+    },
+    {
+      "name": "Test-G04Preparation.ps1",
+      "sha256": "3D617DC539C58A86553B00337D08E7F1B34C77E7118D25CCD832047A3449193A"
+    }
+  ],
+  "privateEvidenceDirectory": "C:\\Users\\FoxOS_User\\.codexify-go\\cutover-v2\\20261001T160710Z-node-repl-compat\\evidence\\g04-live-20261002T155913Z",
+  "evidenceFiles": [
+    {
+      "path": "hosted-calls.jsonl",
+      "length": 93942,
+      "sha256": "5F0385C533E1769FE65D24DA91547F1AE2A1EF20B23618AF575C9047D0940D7E"
+    },
+    {
+      "path": "g04-analysis.json",
+      "length": 16844,
+      "sha256": "8AC009D9A9A307A9070972C468935FE260DE2DF4B9EC4A0A2FB5C1D4D0611657"
+    },
+    {
+      "path": "start\\result.json",
+      "length": 10633,
+      "sha256": "987D4018394DA83BE9D63A706910BD857928F3C253A73CEE6833D77C1EE903CE"
+    },
+    {
+      "path": "restart\\result.json",
+      "length": 10638,
+      "sha256": "D2B55068D5FD6CD8B1032BA9F5BB35F0279A45A8F0B29EC45A5F36A8FA23514B"
+    },
+    {
+      "path": "trace-snapshot-start.jsonl",
+      "length": 63350,
+      "sha256": "F74BD59EE433F61A345CA81511423D1C25C076C36D2BF8E6EF8E288B188A0BE2"
+    },
+    {
+      "path": "trace-snapshot-restart.jsonl",
+      "length": 16703,
+      "sha256": "63DC7876832EAB0593E74E6EFA1C773B9C2431848A252D27BD0F54F5B659468E"
+    },
+    {
+      "path": "local-samples-at-acceptance.jsonl",
+      "length": 1568252,
+      "sha256": "E432207D3DF05A1461EE2DC8CF71DD085AF276B4FCD1FC142F67B94C4B73E98E"
+    },
+    {
+      "path": "guard-start-at-acceptance.jsonl",
+      "length": 31902,
+      "sha256": "39AD2E8DD5BBCC87743047BBCC6502402D448207FB3B2B29738A86F7C44F34FE"
+    },
+    {
+      "path": "guard-restart-at-acceptance.jsonl",
+      "length": 48072,
+      "sha256": "AECD666819BD345AF740D60FC1FD8CB8349A5FE427C7F8B0CF71A293F044B6EC"
+    },
+    {
+      "path": "cancel2\\cancel-identities.json",
+      "length": 351,
+      "sha256": "1C1E4920658E2DDDE294269F9691D666DE15D340AB980D05563A69D1C1ABCF7A"
+    },
+    {
+      "path": "cancel2\\cancel-observer-ready.json",
+      "length": 1061,
+      "sha256": "B99D9642A56A30202D4E9AE61BBC735DA3744A7B142564007D360F82E0906792"
+    },
+    {
+      "path": "cancel2\\cancel-observation.json",
+      "length": 335,
+      "sha256": "14B458D34AC928E8B16DE85F60E7C43D211F8B32877D680450372520DB8A35CE"
+    },
+    {
+      "path": "cancel-observer.stderr",
+      "length": 429,
+      "sha256": "2E3E23BC49EE702AA4F2D4A8CD1234CD30B896C5F0B902FF0BD78C49104F2BB6"
+    },
+    {
+      "path": "fixture-before-restart.json",
+      "length": 568,
+      "sha256": "21B454787682D346B04606DB84FE058785D8F1CA5E9849201FE74F4488A7783C"
+    },
+    {
+      "path": "state-after-restart.json",
+      "length": 223,
+      "sha256": "5E4ABAC069A4117C9C1AA49E936F73FF5FC45B3DCB7134F740EA8266330D4959"
+    },
+    {
+      "path": "negative-auth-local.json",
+      "length": 219,
+      "sha256": "835E13F5A545E60FE0FEDD791422499383D72D8F013F1D5A05F76081EF05E372"
+    },
+    {
+      "path": "final-runtime-identity.json",
+      "length": 3999,
+      "sha256": "89F86395FB31E7527ECB6FA98E994DD04C01E086A5B69CF2DD1F9EF81BD4A3D3"
+    },
+    {
+      "path": "preparation-validation.json",
+      "length": 604,
+      "sha256": "07001473A6B6F988A7F5EFC9D5C9138CCC0EFB89719658D1661E6162F8D740AE"
+    },
+    {
+      "path": "fresh-recovery-dry-run.json",
+      "length": 2063,
+      "sha256": "E15D64DA1770588CAD8A97C2E25CD3AB61EC74D3B6A5CA7D4E37F25106E50ADF"
+    },
+    {
+      "path": "request.json",
+      "length": 1077,
+      "sha256": "D89CF3DF2EAC248AA7B415FFA0850D334BE128C2CE6C93EF4B61002B90C19E52"
+    },
+    {
+      "path": "fixture-retained\\fixture.txt",
+      "length": 72,
+      "sha256": "612F8D5161DB3D04DE9BF0CDB28AB4158965BBC8B3E5248D1A6B85AA8418B282"
+    },
+    {
+      "path": "fixture-retained\\once.txt",
+      "length": 26,
+      "sha256": "5AD7224991944325B2FD9260234F48E816518449C428FC219EF1162B6447BD28"
+    }
+  ],
+  "worktree": "C:\\Users\\FoxOS_User\\codexify-go\\.codexify-go\\worktrees\\g03-checkpoint-20261002",
+  "branch": "codex/windows-cutover-g03",
+  "baseCommit": "3bbf9c7d6f5b8ef6e3ae24cd5a183a9eb3be27af"
+}

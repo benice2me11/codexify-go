@@ -1,0 +1,201 @@
+{
+  "schemaVersion": 1,
+  "gate": "G05",
+  "status": "PENDING",
+  "phase": "INITIAL_ISOLATION_AND_RECONNECT_COMPLETE",
+  "candidateId": "20261001T160710Z-node-repl-compat",
+  "repositoryBaseCommit": "912b6eba71a9786df2e133e7fa536b6a1120a531",
+  "clientCount": 2,
+  "clientResponses": 23,
+  "clientToolErrors": 0,
+  "decodedClientJoins": 22,
+  "uncapturedFixtureCompletionCalls": 1,
+  "additionalUiInitializationCalls": 4,
+  "captures": [
+    {
+      "phase": "start",
+      "captureId": "6f048d96164714834b64de066ca5e98b",
+      "startedAtUtc": "2026-10-02T18:27:13.9831396Z",
+      "deadlineUtc": "2026-10-02T18:37:13.9831396+00:00",
+      "snapshotFile": "trace-snapshot-start.jsonl",
+      "sha256": "51FE9F5F608AD98BDED5D850A82C77BF991611C24275A21781AF2F2669D547F3",
+      "events": 82,
+      "mcpCalls": 19,
+      "toolsCalls": 17,
+      "maxToolsCallsIn10Seconds": 5,
+      "stopEvents": [
+        {
+          "version": 1,
+          "time": "2026-10-02T18:39:23.4848122Z",
+          "capture_id": "6f048d96164714834b64de066ca5e98b",
+          "sequence": 82,
+          "phase": "capture_stop",
+          "reason": "duration_limit"
+        }
+      ]
+    },
+    {
+      "phase": "restart",
+      "captureId": "6b305c58f6baa24354efe3950619699c",
+      "startedAtUtc": "2026-10-02T18:41:07.2193773Z",
+      "deadlineUtc": "2026-10-02T18:51:07.2193773+00:00",
+      "snapshotFile": "trace-snapshot-restart.jsonl",
+      "sha256": "D2AB7F3276002A41EECB17C8E1D47B6067220FDD9B0402D4A78356A47F9387B7",
+      "events": 49,
+      "mcpCalls": 11,
+      "toolsCalls": 9,
+      "maxToolsCallsIn10Seconds": 3,
+      "stopEvents": []
+    }
+  ],
+  "bindings": {
+    "A": {
+      "projectRoot": "C:\\Users\\FoxOS_User\\.codexify-go\\worktrees\\project-a\\6f2ac39290dc-401fc790",
+      "sourceProjectRoot": "C:\\Users\\FoxOS_User\\codexify-g05-fixtures-20261002T174437Z\\project-a",
+      "managedWorktree": true,
+      "bindingScope": "chatgpt_conversation",
+      "bindingUnchangedAfterRestart": true,
+      "bindingSha256": "A408B01BBAAD7BB98918FD4F21AA8BFEDDB5F8DCC2624138651BE1D6EDAE61BB"
+    },
+    "B": {
+      "projectRoot": "C:\\Users\\FoxOS_User\\codexify-g05-fixtures-20261002T174437Z\\project-b",
+      "sourceProjectRoot": "C:\\Users\\FoxOS_User\\codexify-g05-fixtures-20261002T174437Z\\project-b",
+      "managedWorktree": false,
+      "bindingScope": "chatgpt_conversation",
+      "bindingUnchangedAfterRestart": true,
+      "bindingSha256": "626F3B2EE2375C175CB965326AE3C2C54CD9BD32F11A4D110120C47358D4812A"
+    }
+  },
+  "completed": [
+    "two real conversation identities",
+    "distinct initial projects, markers and execution directories",
+    "one managed fixture worktree created and inspected",
+    "exact worktree resumed after planned SCM restart using extended-length path",
+    "both bindings byte-identical and both markers and directories retained after restart"
+  ],
+  "pending": [
+    "actual Switch UI in A while B exec remains live",
+    "resume A exact worktree after switch",
+    "post-G08/G09 binding repetition",
+    "verified fixture cleanup"
+  ],
+  "limitations": [
+    "No UI switch was performed or passed",
+    "G05 is not PASS",
+    "No G06 no-feedback acceptance is claimed",
+    "The one stdin completion after the first deadline has client output and local process evidence but no decoded request trace"
+  ],
+  "runtime": {
+    "verifiedAtUtc": "2026-10-02T18:52:45.6430984+00:00",
+    "service": {
+      "State": "Running",
+      "StartMode": "Manual",
+      "ProcessId": 19672
+    },
+    "supervisorPid": 19672,
+    "workerPid": 24324,
+    "tunnelPid": 24172,
+    "healthStatus": 200,
+    "rustOwners": 0,
+    "guardAction": "CONTINUE",
+    "guardTime": "2026-10-02T18:52:43.7253458+00:00",
+    "disabledTaskCount": 11,
+    "frozenAssetsUnchanged": true,
+    "fixtureSourcesClean": true,
+    "managedWorktreeClean": true,
+    "fixtureShellsRemaining": 0,
+    "candidateSha256": "61E2A086445A1B10E7537E720119B0855E17515A58A5B3F8BDCA914075B07DD6",
+    "captureProfileSha256": "BCDF7B1362047E957F21B55704D69EC3783BD189B9D79759980499613D9A197F"
+  },
+  "privateEvidenceDirectory": "C:\\Users\\FoxOS_User\\.codexify-go\\cutover-v2\\20261001T160710Z-node-repl-compat\\evidence\\g05-live-20261002T182200Z-retry",
+  "privateEvidence": [
+    {
+      "name": "client-call-results-joined.json",
+      "sha256": "1121951025833C8689DC1A34C7834F22E3E7DA57A21BDC619435336DB9EB2D7E",
+      "length": 81486
+    },
+    {
+      "name": "g05-initial-analysis.json",
+      "sha256": "EA40522066258FDFD2AB91E35213F640B288A2333BA011631F89F820B2FED341",
+      "length": 4244
+    },
+    {
+      "name": "trace-snapshot-start.jsonl",
+      "sha256": "51FE9F5F608AD98BDED5D850A82C77BF991611C24275A21781AF2F2669D547F3",
+      "length": 39325
+    },
+    {
+      "name": "trace-snapshot-restart.jsonl",
+      "sha256": "D2AB7F3276002A41EECB17C8E1D47B6067220FDD9B0402D4A78356A47F9387B7",
+      "length": 22311
+    },
+    {
+      "name": "binding-a-initial.json",
+      "sha256": "A408B01BBAAD7BB98918FD4F21AA8BFEDDB5F8DCC2624138651BE1D6EDAE61BB",
+      "length": 616
+    },
+    {
+      "name": "binding-b-initial.json",
+      "sha256": "626F3B2EE2375C175CB965326AE3C2C54CD9BD32F11A4D110120C47358D4812A",
+      "length": 504
+    },
+    {
+      "name": "binding-a-after-restart.json",
+      "sha256": "A408B01BBAAD7BB98918FD4F21AA8BFEDDB5F8DCC2624138651BE1D6EDAE61BB",
+      "length": 616
+    },
+    {
+      "name": "binding-b-after-restart.json",
+      "sha256": "626F3B2EE2375C175CB965326AE3C2C54CD9BD32F11A4D110120C47358D4812A",
+      "length": 504
+    },
+    {
+      "name": "native-extended-path-check.json",
+      "sha256": "FA49D775D89EA7AE6392780E452BE0807FB3717B79BE41ED3C1D51879B459DB5",
+      "length": 859
+    },
+    {
+      "name": "initial-final-runtime.json",
+      "sha256": "EC0C6CD81584EAAEE5B9F469B833DD3BECE08AA416230F0D947C24B30C6563B2",
+      "length": 705
+    },
+    {
+      "name": "preparation-validation.json",
+      "sha256": "00B00B8E900874F4AF0BCB9F9C6884EF4DBEAE5453B14B740FF1FBA31E35A764",
+      "length": 608
+    },
+    {
+      "name": "reentry-dry-run.json",
+      "sha256": "B8F954D37B7A9A9B6BF5530AECD7A2E60E80C6C641BD15E19B410EF4797153B9",
+      "length": 131
+    },
+    {
+      "name": "Reenter-G05.ps1",
+      "sha256": "B090EF8DEF2247D75F3B487D8FE833F55E75237866874892DC58BDCF3F578C3A",
+      "length": 5569
+    },
+    {
+      "name": "Invoke-G05TrialStep.ps1",
+      "sha256": "81DCE31A98EBAE4266FACD9DD8BF225D21F9179CF7887A1CC89353976207EB06",
+      "length": 16274
+    },
+    {
+      "name": "Invoke-G05SerializedRollback.ps1",
+      "sha256": "4B2168DDB752C1CB704CC45F4F301FBD66BF5B055F0E122BDECF1B348753B322",
+      "length": 1517
+    },
+    {
+      "name": "Observe-G05Local.ps1",
+      "sha256": "636955164B19A1F3D114FE7609DE03BE1DA277C0811623AAEA1CE7E35E825C69",
+      "length": 4414
+    },
+    {
+      "name": "Collect-G05Initial.py",
+      "sha256": "419450FC3EBE612B7CB1480099E40D0A712A784218C2709D77816A70F4A44729",
+      "length": 10000
+    }
+  ],
+  "priorFailedAttempt": "C:\\Users\\FoxOS_User\\.codexify-go\\cutover-v2\\20261001T160710Z-node-repl-compat\\evidence\\g05-live-20261002T174437Z",
+  "productionCodeChanged": false,
+  "push": false
+}

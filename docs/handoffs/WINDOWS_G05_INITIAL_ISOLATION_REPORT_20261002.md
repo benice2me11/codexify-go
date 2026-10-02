@@ -1,6 +1,6 @@
 # Windows G05: initial isolation and reconnect checks
 
-Status: **G05 PENDING**. Initial selection, separate workspaces and same-path
+Status: **G05 BLOCKED by widget selection**. Initial selection, separate workspaces and same-path
 reconnect checks passed on the frozen candidate. The actual Switch UI check,
 post-G08/G09 repetitions and verified fixture cleanup remain outstanding.
 
@@ -93,13 +93,35 @@ was outside decoded coverage and does not pass the switching check.
 An offline probe executed the unchanged embedded SetupHTML with a synthetic
 MCP `isError=true` selection response. It reproduced an empty error area and
 two follow-up status/catalog calls: the current widget ignores that error
-response. This proves an error-reporting defect, not the exact rejection reason
-for the operator's live click. Captured widget bootstrap calls also lacked a
-conversation hash; missing identity is a hypothesis until a fresh selection
-request establishes the live failure. The frozen candidate is unchanged.
+response. This proves an error-reporting defect. The frozen candidate is unchanged.
 
-Private probe and trace evidence is retained under the existing G05 retry
-evidence directory's `ui-restart` phase. Diagnose one operator Select request
+A fresh capture started at 19:37:09Z. Its retained snapshot contains two
+`set_project_root` failures at 19:39:39Z and 19:39:58Z, both with
+`tool_is_error=true`, protocol `2026-07-28`, and neither a conversation hash nor
+a transport-session hash. A model-origin `get_environment` at 19:40:23Z has a
+conversation hash and succeeds; client A confirms its original managed
+worktree. The operator reports animation after Select without a project change.
+Both saved A/B binding hashes still match their pre-UI values.
+
+Missing conversation identity explains the rejection in the unchanged candidate:
+this protocol uses the stateless route without a transport-session header,
+`requestMeta` therefore has no identity fallback, and `projects.Select` rejects
+selection in multi-project mode. The diagnostic trace does not retain the
+actual error message; this explanation follows the traced metadata and source
+path. The point where the UI request loses its identity upstream is not yet
+established. OpenAI's [reference](https://developers.openai.com/plugins/reference#_meta-fields-the-client-provides)
+documents `openai/session` as the conversation identifier for tool calls.
+
+The source-only widget fix now displays an MCP `isError` response, preserves
+the displayed workspace, re-enables controls and skips follow-up reads after
+failed selection. The regression first failed on hidden error text, then passed
+for text blocks, string content and empty-content fallback; `go test ./... -count=1`
+also passed. No binary was built or deployed for this fix. It does not supply
+the missing conversation identity or pass the live switching requirement.
+
+Private probe evidence is retained under the existing G05 retry evidence
+directory's `ui-restart` phase; `ui-diagnosis` retains the fresh trace snapshot,
+diagnosis and red/green/full-suite outputs. Restore real UI conversation context
 before repeating the isolation scenario; do not repeat already passed gates.
 
 ### Outstanding acceptance

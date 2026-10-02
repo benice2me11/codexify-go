@@ -99,7 +99,15 @@ const SetupHTML = `<!doctype html>
 <script>
 const statusEl=document.getElementById("status"),projectsEl=document.getElementById("projects"),errorEl=document.getElementById("error"),switchBtn=document.getElementById("switch");
 function structured(r){return r&&((r.structuredContent)||(r.structured_content)||(r.result&&r.result.structuredContent))||null}
-async function call(name,args={}){if(!(window.openai&&window.openai.callTool))throw new Error("Tool calls are unavailable in this host");return window.openai.callTool(name,args)}
+async function call(name,args={}){
+  if(!(window.openai&&window.openai.callTool))throw new Error("Tool calls are unavailable in this host");
+  const result=await window.openai.callTool(name,args);
+  if(result&&result.isError===true){
+    const message=typeof result.content==="string"?result.content:Array.isArray(result.content)?result.content.filter(c=>c&&c.type==="text"&&typeof c.text==="string").map(c=>c.text).join("\n"):"";
+    throw new Error(message.trim()||"The request failed.");
+  }
+  return result;
+}
 let busy=false;
 function renderStatus(s){
     const w=s.workspace||null;

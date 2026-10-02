@@ -59,6 +59,7 @@ function host(html, options = {}) {
     try {
       await tick();
       if (options.fail) throw new Error('fixture failure');
+      if (options.toolError?.name === name) return {isError:true,content:options.toolError.content};
       let data;
       switch (name) {
         case 'setup_status': data={workspace:{projectRoot:'C:\\fixture'},awaitingSelection:false}; break;
@@ -146,5 +147,25 @@ for (const [name,html] of Object.entries(pages)) {
     assert.equal(sync.calls.length,expectedInitial[name],'synchronous feedback loop');
   }
   results.push({name,initialCalls:expectedInitial[name],callsAfterInteractions:h.calls.length,maxConcurrent:h.maxActive,globalsTriggeredCalls:0});
+}
+if (!baseline) {
+  const errors = [
+    {content:[{type:'text',text:'Selection rejected: <fixture identity missing>'}],expected:'Selection rejected: <fixture identity missing>'},
+    {content:'Selection rejected by fixture',expected:'Selection rejected by fixture'},
+    {content:[],expected:'The request failed.'},
+  ];
+  for (const fixture of errors) {
+    const h=host(pages.SetupHTML,{feedback:false,toolError:{name:'set_project_root',content:fixture.content}});
+    await settle();
+    const previousStatus=h.elements.get('status').innerHTML;
+    const before=h.calls.length;
+    await h.elements.get('projects').children[0].children[1].onclick();
+    await settle();
+    assert.ok(h.elements.get('error').textContent.includes(fixture.expected),'Select must display MCP tool errors');
+    assert.deepEqual(h.calls.slice(before).map(c=>c.name),['set_project_root'],'failed selection must not reload or retry');
+    assert.equal(h.elements.get('status').innerHTML,previousStatus,'failed selection changed the displayed workspace');
+    assert.ok(h.all.filter(el=>el.tag==='button').every(el=>!el.disabled),'failed selection left a disabled button');
+  }
+  results.push({name:'SetupToolErrors',cases:errors.length});
 }
 console.log(JSON.stringify({mode:baseline?'bounded-original-reproduction':'regression',host:'synthetic; no hosted MCP calls',results},null,2));

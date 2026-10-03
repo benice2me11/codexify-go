@@ -124,14 +124,48 @@ directory's `ui-restart` phase; `ui-diagnosis` retains the fresh trace snapshot,
 diagnosis and red/green/full-suite outputs. Restore real UI conversation context
 before repeating the isolation scenario; do not repeat already passed gates.
 
+### Autonomous desktop verification, 2026-10-03
+
+The operator explicitly asked Codex to perform the PC/UI checks itself. The
+frozen Go candidate was started from Stopped/Manual using the validated
+Windows PowerShell 5.1 controller, independent sampler and rollback guard.
+The new capture started at 15:30:39Z. Codex opened the existing A task, loaded
+its actual project widget, and clicked **Select** on fixture B exactly once
+at 15:31:48.117Z. The observed widget disabled its controls, then returned to
+`No workspace selected.`; a desktop screenshot is retained privately.
+
+The server recorded one `set_project_root` tool error at 15:31:48.874Z, without
+`openai/session` or a stateful transport identity. The unchanged widget then
+called `setup_status` and `list_projects`. One model-origin `get_environment`
+from the same A task succeeded at 15:35:12.857Z with a conversation hash in
+the same capture. Both A/B binding files still match their original hashes.
+There was no B exec session and no successful Switch operation in this attempt.
+
+The installed Codex desktop log independently routes the UI response to A's
+correct native task ID at 15:31:49.434Z. Read-only inspection of the installed
+26.901.6511.0 JavaScript bundle shows that the widget path carries `threadId`
+and that `callMcpTool` adds `thread_id` and `threadId` metadata; that client
+code does not add `openai/session`. This narrows the diagnostic boundary:
+the native task context is known on the desktop side, but the identity Go
+requires is absent on the server side. The exact transformation across the
+app server, hosted connector path and tunnel is not captured, so this report
+does not assign the loss to one of those components.
+
+No identity was fabricated, binding file edited, app-only tool called by the
+model, installed Codex file modified, or new Go binary deployed. The source
+error-display fix remains undeployed. G05 stays BLOCKED; restoring a real,
+consistent UI conversation identity remains necessary before its Switch check.
+Private evidence is in `g05-live-20261003T152413Z-self-ui`: the trace snapshot,
+desktop screenshot/action timestamp, selected desktop routing records, static
+code excerpts, binding hashes and runtime verification.
+
 ### Outstanding acceptance
 
 The next step needs the actual **Switch project** button in client A while a
 new B stdin session remains live, followed by A's return to the recorded exact
-worktree and verification of B's unchanged binding and session. The available
-native window identified itself as ChatGPT.exe; the current Computer Use skill
-prohibits automating that app UI. No automated UI input or direct model/HTTP
-call to the app-only switch tool was used. Manual UI readiness is still needed.
+worktree and verification of B's unchanged binding and session. Desktop access
+has now been exercised under the operator's explicit request; manual clicking
+is no longer the blocker. The UI identity mismatch must be resolved first.
 
 Retain both fixture repositories and A's worktree for the required post-G08/G09
 checks. Cleanup must follow the original fixture/path/cleanliness safeguards.

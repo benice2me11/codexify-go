@@ -42,35 +42,44 @@ type Options struct {
 // TraceID is an unverified X-Request-Id header, retained only for UUID-shaped IDs.
 // Hashes use a private per-capture key; they are not stable across captures.
 type Event struct {
-	Version          int       `json:"version"`
-	Time             time.Time `json:"time"`
-	CaptureID        string    `json:"capture_id"`
-	Sequence         uint64    `json:"sequence"`
-	Phase            string    `json:"phase"`
-	HTTPID           uint64    `json:"http_id,omitempty"`
-	CallID           uint64    `json:"call_id,omitempty"`
-	HTTPMethod       string    `json:"http_method,omitempty"`
-	Status           int       `json:"http_status,omitempty"`
-	ResponseBytes    int64     `json:"response_bytes,omitempty"`
-	DurationMS       float64   `json:"duration_ms,omitempty"`
-	Method           string    `json:"rpc_method,omitempty"`
-	MethodHash       string    `json:"method_hash,omitempty"`
-	Tool             string    `json:"tool_name,omitempty"`
-	ToolHash         string    `json:"tool_hash,omitempty"`
-	OperationHash    string    `json:"operation_hash,omitempty"`
-	FingerprintState string    `json:"fingerprint_state,omitempty"`
-	ConversationHash string    `json:"conversation_hash,omitempty"`
-	TransportHash    string    `json:"transport_hash,omitempty"`
-	TraceID          string    `json:"control_plane_trace_id,omitempty"`
-	TraceHash        string    `json:"trace_hash,omitempty"`
-	ProtocolVersion  string    `json:"protocol_version,omitempty"`
-	Notification     bool      `json:"notification,omitempty"`
-	Outcome          string    `json:"outcome,omitempty"`
-	RPCErrorCode     *int64    `json:"rpc_error_code,omitempty"`
-	ToolIsError      *bool     `json:"tool_is_error,omitempty"`
-	Reason           string    `json:"reason,omitempty"`
-	MaxEvents        int       `json:"max_events,omitempty"`
-	MaxDurationMS    int64     `json:"max_duration_ms,omitempty"`
+	Version            int                      `json:"version"`
+	Time               time.Time                `json:"time"`
+	CaptureID          string                   `json:"capture_id"`
+	Sequence           uint64                   `json:"sequence"`
+	Phase              string                   `json:"phase"`
+	HTTPID             uint64                   `json:"http_id,omitempty"`
+	CallID             uint64                   `json:"call_id,omitempty"`
+	HTTPMethod         string                   `json:"http_method,omitempty"`
+	Status             int                      `json:"http_status,omitempty"`
+	ResponseBytes      int64                    `json:"response_bytes,omitempty"`
+	DurationMS         float64                  `json:"duration_ms,omitempty"`
+	Method             string                   `json:"rpc_method,omitempty"`
+	MethodHash         string                   `json:"method_hash,omitempty"`
+	Tool               string                   `json:"tool_name,omitempty"`
+	ToolHash           string                   `json:"tool_hash,omitempty"`
+	OperationHash      string                   `json:"operation_hash,omitempty"`
+	FingerprintState   string                   `json:"fingerprint_state,omitempty"`
+	ConversationHash   string                   `json:"conversation_hash,omitempty"`
+	IdentityMetadata   map[string]IdentityField `json:"identity_metadata,omitempty"`
+	OtherMetadataCount int                      `json:"other_metadata_count,omitempty"`
+	TransportHash      string                   `json:"transport_hash,omitempty"`
+	TraceID            string                   `json:"control_plane_trace_id,omitempty"`
+	TraceHash          string                   `json:"trace_hash,omitempty"`
+	ProtocolVersion    string                   `json:"protocol_version,omitempty"`
+	Notification       bool                     `json:"notification,omitempty"`
+	Outcome            string                   `json:"outcome,omitempty"`
+	RPCErrorCode       *int64                   `json:"rpc_error_code,omitempty"`
+	ToolIsError        *bool                    `json:"tool_is_error,omitempty"`
+	Reason             string                   `json:"reason,omitempty"`
+	MaxEvents          int                      `json:"max_events,omitempty"`
+	MaxDurationMS      int64                    `json:"max_duration_ms,omitempty"`
+}
+
+// IdentityField describes only an allowlisted identity key. Values are never
+// retained; hashes share a domain so aliases can be compared within one capture.
+type IdentityField struct {
+	Type string `json:"type"`
+	Hash string `json:"hash,omitempty"`
 }
 
 type Recorder struct {
@@ -394,6 +403,38 @@ func (r *Recorder) metadata(method string, request mcp.Request) Event {
 		return e
 	}
 	meta := params.GetMeta()
+	if len(meta) > 0 {
+		e.OtherMetadataCount = len(meta)
+		for _, key := range []string{"openai/session", "thread_id", "threadId", "conversation_id", "conversationId"} {
+			value, present := meta[key]
+			if !present {
+				continue
+			}
+			if e.IdentityMetadata == nil {
+				e.IdentityMetadata = make(map[string]IdentityField)
+			}
+			field := IdentityField{Type: "other"}
+			switch v := value.(type) {
+			case nil:
+				field.Type = "null"
+			case string:
+				field.Type = "string"
+				if id := strings.TrimSpace(v); id != "" {
+					field.Hash = r.hash("metadata-identity", []byte(id))
+				}
+			case bool:
+				field.Type = "boolean"
+			case json.Number, float64, float32, int, int64, int32, uint, uint64, uint32:
+				field.Type = "number"
+			case map[string]any:
+				field.Type = "object"
+			case []any:
+				field.Type = "array"
+			}
+			e.IdentityMetadata[key] = field
+			e.OtherMetadataCount--
+		}
+	}
 	if identity, ok := meta["openai/session"].(string); ok && strings.TrimSpace(identity) != "" {
 		e.ConversationHash = r.hash("conversation", []byte(strings.TrimSpace(identity)))
 	}

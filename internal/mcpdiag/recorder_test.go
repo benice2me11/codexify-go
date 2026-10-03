@@ -132,6 +132,87 @@ func TestFingerprintsAndMetadataPrivacy(t *testing.T) {
 
 func hexKey(key []byte) string { return fmt.Sprintf("%x", key) }
 
+func TestIdentityMetadataCanCompareUIAndModelWithoutLeakingValues(t *testing.T) {
+	r := testRecorder(t, 30)
+	model := callRequest(`{}`, "SECRET_ANONYMOUS_A", "")
+	model.Params.Meta = mcp.Meta{
+		"openai/session": "SECRET_ANONYMOUS_A",
+		"thread_id":      "SECRET_NATIVE_A", "threadId": "SECRET_NATIVE_A",
+		"conversation_id": 12345, "conversationId": nil,
+		"SECRET_UNKNOWN_KEY": "SECRET_UNKNOWN_VALUE",
+	}
+	widget := callRequest(`{}`, "", "")
+	widget.Params.Meta = mcp.Meta{"thread_id": "SECRET_NATIVE_A", "threadId": "SECRET_NATIVE_A"}
+	next := r.Middleware()(func(context.Context, string, mcp.Request) (mcp.Result, error) {
+		return &mcp.CallToolResult{}, nil
+	})
+	for _, req := range []*mcp.CallToolRequest{model, widget} {
+		before, _ := json.Marshal(req.Params)
+		if _, err := next(context.Background(), "tools/call", req); err != nil {
+			t.Fatal(err)
+		}
+		after, _ := json.Marshal(req.Params)
+		if !bytes.Equal(before, after) {
+			t.Fatal("identity diagnostics changed the request")
+		}
+	}
+	_, raw := readEvents(t, r)
+	if strings.Contains(raw, "SECRET_") || strings.Contains(raw, ":12345") || strings.Contains(raw, hexKey(r.key[:])) {
+		t.Fatal("identity diagnostics leaked a value, unknown key or capture secret")
+	}
+	var starts []map[string]json.RawMessage
+	for _, line := range strings.Split(strings.TrimSpace(raw), "\n") {
+		var row map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(line), &row); err != nil {
+			t.Fatal(err)
+		}
+		if string(row["phase"]) == `"mcp_start"` {
+			starts = append(starts, row)
+		}
+	}
+	if len(starts) != 2 {
+		t.Fatalf("expected two real recorded requests, got %d", len(starts))
+	}
+	type field struct {
+		Type string `json:"type"`
+		Hash string `json:"hash"`
+	}
+	var modelFields, widgetFields map[string]field
+	if len(starts[0]["identity_metadata"]) == 0 {
+		t.Fatal("capture cannot distinguish native thread identity from missing conversation identity")
+	}
+	if err := json.Unmarshal(starts[0]["identity_metadata"], &modelFields); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(starts[1]["identity_metadata"], &widgetFields); err != nil {
+		t.Fatal(err)
+	}
+	native := modelFields["thread_id"].Hash
+	if len(native) != 64 || modelFields["thread_id"].Type != "string" || native != modelFields["threadId"].Hash || native != widgetFields["thread_id"].Hash {
+		t.Fatal("same native identity cannot be correlated across field aliases and call origins")
+	}
+	if modelFields["openai/session"].Hash == "" || modelFields["openai/session"].Hash == native {
+		t.Fatal("anonymous and native identities were conflated")
+	}
+	if _, found := widgetFields["openai/session"]; found {
+		t.Fatal("capture invented an absent conversation identity")
+	}
+	if len(modelFields) != 5 || len(widgetFields) != 2 || modelFields["conversation_id"].Type != "number" || modelFields["conversationId"].Type != "null" || modelFields["conversation_id"].Hash != "" {
+		t.Fatal("capture lost presence/type information or hashed an invalid identity")
+	}
+	if string(starts[0]["other_metadata_count"]) != "1" {
+		t.Fatal("unrecognized metadata must be counted without recording its keys")
+	}
+	r2 := testRecorder(t, 10)
+	second, err := json.Marshal(r2.metadata("tools/call", model))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(second), native) {
+		t.Fatal("identity hashes are linkable across captures")
+	}
+}
+
 func TestHTTPAbortDoesNotInventSuccess(t *testing.T) {
 	r := testRecorder(t, 20)
 	func() {

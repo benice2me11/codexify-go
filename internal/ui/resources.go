@@ -98,7 +98,7 @@ const SetupHTML = `<!doctype html>
 </div>
 <script>
 const statusEl=document.getElementById("status"),projectsEl=document.getElementById("projects"),errorEl=document.getElementById("error"),switchBtn=document.getElementById("switch");
-let uiContext="";
+let uiContext="",observedHostContext="",hostContextRevision=0;
 function setupContext(value){
   if(!value||typeof value!=="object")return "";
   const key="io.github.devnoname120/codexify/setup-context";
@@ -108,10 +108,21 @@ function setupContext(value){
   }
   return "";
 }
+function applyHostContext(current){
+  if(current!==uiContext){uiContext=current;hostContextRevision++;}
+}
+function syncHostContext(){
+  const current=setupContext(window.openai&&window.openai.toolResponseMetadata);
+  if(current!==observedHostContext){observedHostContext=current;applyHostContext(current);}
+}
 function structured(r){return r&&((r.structuredContent)||(r.structured_content)||(r.result&&r.result.structuredContent))||null}
 async function call(name,args={}){
   if(!(window.openai&&window.openai.callTool))throw new Error("Tool calls are unavailable in this host");
+  syncHostContext();
+  const revision=hostContextRevision;
   const result=await window.openai.callTool(name,uiContext?{...args,uiContext}:args);
+  syncHostContext();
+  if(revision!==hostContextRevision)throw new Error("The workspace changed while this request was running. Refresh to continue.");
   const nextContext=setupContext(result);if(nextContext)uiContext=nextContext;
   if(result&&result.isError===true){
     const message=typeof result.content==="string"?result.content:Array.isArray(result.content)?result.content.filter(c=>c&&c.type==="text"&&typeof c.text==="string").map(c=>c.text).join("\n"):"";
@@ -144,7 +155,8 @@ function renderPayload(value){
 // Host globals are state notifications, never an instruction to call tools.
 function renderHost(event){
   const globals=event&&event.detail&&event.detail.globals;
-  if(!globals||Object.hasOwn(globals,"toolResponseMetadata"))uiContext=setupContext(globals?globals.toolResponseMetadata:window.openai&&window.openai.toolResponseMetadata);
+  if(globals&&Object.hasOwn(globals,"toolResponseMetadata")){observedHostContext=setupContext(window.openai&&window.openai.toolResponseMetadata);applyHostContext(setupContext(globals.toolResponseMetadata));}
+  else syncHostContext();
   if(globals&&!Object.hasOwn(globals,"toolOutput"))return;
   renderPayload(globals?globals.toolOutput:window.openai&&window.openai.toolOutput);
 }

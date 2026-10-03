@@ -71,18 +71,22 @@ function host(html, options = {}) {
         case 'setup_ui_switch_project': data={awaitingSelection:true,workspace:null}; break;
         default: throw new Error('unexpected fixture tool '+name);
       }
+      if(options.beforeResult)await options.beforeResult(name,params);
       if (options.feedback !== false) {
         // A host may deliver a state change during a call, or after its promise
         // settles. The asynchronous case makes a mere in-flight flag inadequate.
         if (options.feedback === 'sync') emit({toolOutput:data});
         else setImmediate(() => emit({toolOutput:data}));
       }
-      return {structuredContent:data,...(options.resultMetadata?{_meta:options.resultMetadata}:{})};
+      const resultMetadata=typeof options.resultMetadata==='function'?options.resultMetadata(name,params):options.resultMetadata;
+      return {structuredContent:data,...(resultMetadata?{_meta:resultMetadata}:{})};
     } finally { active--; }
   }};
   const context = vm.createContext({window,document,console});
   for (const script of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) vm.runInContext(script[1],context,{timeout:1000});
   return {calls,elements,all,emit,get maxActive(){return maxActive},get exhausted(){return exhausted},
+    setHostMetadata(value) { window.openai.toolResponseMetadata=value; },
+    emitEvent(globals) { window.dispatchEvent({type:'openai:set_globals',detail:{globals}}); },
     click(id) { const el=elements.get(id); assert.ok(el&&el.onclick,id); if(!el.disabled) return el.onclick(); },
   };
 }
@@ -184,6 +188,54 @@ if (!baseline) {
   assert.equal(delayed.calls.length,initialCount,'delayed metadata initiated tools');
   await delayed.click('scratch');await settle();
   assert.ok(delayed.calls.slice(initialCount).every(c=>c.params.uiContext===contextA),'delayed context missing from user action');
+  // The desktop can update the global getter without including metadata in the
+  // following event payload. A button must use the current getter even when no
+  // corresponding event was delivered.
+  for(const notification of ['toolOutput','none']){
+    const late=host(pages.SetupHTML,{feedback:false});
+    await settle();
+    const before=late.calls.length;
+    late.setHostMetadata(shapes[0]);
+    if(notification==='toolOutput')late.emit({toolOutput:{projects:[]}});
+    await settle();
+    assert.equal(late.calls.length,before,'getter metadata update initiated calls');
+    await late.click('refresh');await settle();
+    assert.ok(late.calls.slice(before).every(c=>c.params.uiContext===contextA),'current host getter context was missed: '+notification);
+    const cleared=late.calls.length;
+    late.setHostMetadata(null);
+    await late.click('refresh');await settle();
+    assert.ok(late.calls.slice(cleared).every(c=>!Object.hasOwn(c.params,'uiContext')),'cleared getter context was reused');
+  }
+  for(const replacement of [contextB,null]){
+    for(const notification of ['toolOutput','none']){
+      let release,entered;
+      const pending=new Promise(resolve=>{release=resolve;});
+      const started=new Promise(resolve=>{entered=resolve;});
+      let first=true;
+      const race=host(pages.SetupHTML,{
+        initialMetadata:shapes[0],feedback:false,
+        async beforeResult(){if(first){first=false;entered();await pending;}},
+        resultMetadata:(_name,params)=>params.uiContext?{[contextKey]:params.uiContext}:null,
+      });
+      await started;
+      race.setHostMetadata(replacement?{[contextKey]:replacement}:null);
+      if(notification==='toolOutput')race.emit({toolOutput:{projects:[]}});
+      release();await settle();
+      assert.equal(race.calls.length,1,'changed workspace continued the old read chain');
+      assert.ok(race.elements.get('error').textContent.includes('workspace changed'),'changed workspace did not stop the stale result');
+      const before=race.calls.length;
+      await race.click('scratch');await settle();
+      assert.ok(race.calls.slice(before).every(c=>replacement?c.params.uiContext===replacement:!Object.hasOwn(c.params,'uiContext')),'late response restored the previous context');
+    }
+  }
+  const eventFirst=host(pages.SetupHTML,{initialMetadata:shapes[0],feedback:false});
+  await settle();
+  for(const replacement of [contextB,null]){
+    const before=eventFirst.calls.length;
+    eventFirst.emitEvent({toolResponseMetadata:replacement?{[contextKey]:replacement}:null});
+    await eventFirst.click('refresh');await settle();
+    assert.ok(eventFirst.calls.slice(before).every(c=>replacement?c.params.uiContext===replacement:!Object.hasOwn(c.params,'uiContext')),'stale getter overrode explicit metadata event');
+  }
   results.push({name:'SetupConversationContext',metadataShapes:shapes.length,globalsTriggeredCalls:0});
   const errors = [
     {content:[{type:'text',text:'Selection rejected: <fixture identity missing>'}],expected:'Selection rejected: <fixture identity missing>'},

@@ -52,7 +52,7 @@ function host(html, options = {}) {
     Object.assign(window.openai, globals);
     window.dispatchEvent({type:'openai:set_globals',detail:{globals}});
   }
-  window.openai = {toolOutput:options.initialOutput||null, async callTool(name, params) {
+  window.openai = {toolOutput:options.initialOutput||null, toolResponseMetadata:options.initialMetadata||null, async callTool(name, params) {
     if (calls.length >= 64) { exhausted = true; throw new Error('synthetic call budget exhausted'); }
     calls.push({name, params:JSON.parse(JSON.stringify(params))});
     active++; maxActive=Math.max(maxActive,active);
@@ -77,7 +77,7 @@ function host(html, options = {}) {
         if (options.feedback === 'sync') emit({toolOutput:data});
         else setImmediate(() => emit({toolOutput:data}));
       }
-      return {structuredContent:data};
+      return {structuredContent:data,...(options.resultMetadata?{_meta:options.resultMetadata}:{})};
     } finally { active--; }
   }};
   const context = vm.createContext({window,document,console});
@@ -149,6 +149,42 @@ for (const [name,html] of Object.entries(pages)) {
   results.push({name,initialCalls:expectedInitial[name],callsAfterInteractions:h.calls.length,maxConcurrent:h.maxActive,globalsTriggeredCalls:0});
 }
 if (!baseline) {
+  const contextKey='io.github.devnoname120/codexify/setup-context';
+  const contextA='A'.repeat(43),contextB='B'.repeat(43);
+  const shapes=[
+    {[contextKey]:contextA},
+    {_meta:{[contextKey]:contextA}},
+    {status:'success',call_tool_result:{_meta:{[contextKey]:contextA}}},
+    {status:'success',mcp_tool_result:{_meta:{[contextKey]:contextA}}},
+  ];
+  for(const metadata of shapes){
+    const h=host(pages.SetupHTML,{initialMetadata:metadata});
+    await settle();
+    assert.deepEqual(h.calls.map(c=>c.params.uiContext),[contextA,contextA],'initial workspace calls lost hidden context');
+    const before=h.calls.length;
+    h.emit({toolResponseMetadata:{_meta:{[contextKey]:contextB}}});
+    await settle();
+    assert.equal(h.calls.length,before,'metadata update initiated tool calls');
+    await h.click('switch');await settle();
+    assert.deepEqual(h.calls.slice(before).map(c=>c.params.uiContext),[contextB,contextB,contextB],'updated context did not reach switch and its reads');
+    h.emit({toolResponseMetadata:null});
+    const cleared=h.calls.length;
+    await h.click('refresh');await settle();
+    assert.ok(h.calls.slice(cleared).every(c=>!Object.hasOwn(c.params,'uiContext')),'cleared host metadata reused another card context');
+  }
+  const renewed=host(pages.SetupHTML,{initialMetadata:shapes[0],resultMetadata:{[contextKey]:contextB}});
+  await settle();
+  assert.deepEqual(renewed.calls.map(c=>c.params.uiContext),[contextA,contextB],'returned fresh context was not retained');
+  await renewed.click('refresh');await settle();
+  assert.ok(renewed.calls.slice(1).every(c=>c.params.uiContext===contextB),'initial metadata overwrote refreshed context');
+  const delayed=host(pages.SetupHTML);
+  await settle();
+  const initialCount=delayed.calls.length;
+  delayed.emit({toolResponseMetadata:shapes[0]});await settle();
+  assert.equal(delayed.calls.length,initialCount,'delayed metadata initiated tools');
+  await delayed.click('scratch');await settle();
+  assert.ok(delayed.calls.slice(initialCount).every(c=>c.params.uiContext===contextA),'delayed context missing from user action');
+  results.push({name:'SetupConversationContext',metadataShapes:shapes.length,globalsTriggeredCalls:0});
   const errors = [
     {content:[{type:'text',text:'Selection rejected: <fixture identity missing>'}],expected:'Selection rejected: <fixture identity missing>'},
     {content:'Selection rejected by fixture',expected:'Selection rejected by fixture'},

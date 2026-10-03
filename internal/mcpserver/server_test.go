@@ -401,6 +401,10 @@ func TestUIResourcesAndToolMetadata(t *testing.T) {
 	if len(setup.Contents) != 1 || setup.Contents[0].MIMEType != ui.MIMEType || !strings.Contains(setup.Contents[0].Text, "setup_status") {
 		t.Fatalf("unexpected setup UI resource: %+v", setup.Contents)
 	}
+	legacy, err := session.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: "ui://codexify-go/setup/v2/mcp-app.html"})
+	if err != nil || len(legacy.Contents) != 1 || legacy.Contents[0].Text != ui.SetupHTML {
+		t.Fatalf("cached setup v2 descriptor cannot read the current widget: %v", err)
+	}
 	diff, err := session.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: ui.DiffURI})
 	if err != nil {
 		t.Fatal(err)

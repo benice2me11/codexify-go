@@ -91,7 +91,8 @@ function host(html, options = {}) {
   };
 }
 
-const expectedInitial = {SetupHTML:2,ChatHTML:1,UpdateHTML:1,DiffHTML:0};
+const expectedInitial = {SetupHTML:0,ChatHTML:1,UpdateHTML:1,DiffHTML:0};
+const callsPerRefresh = {SetupHTML:2,ChatHTML:1,UpdateHTML:1};
 const results = [];
 for (const [name,html] of Object.entries(pages)) {
   const h=host(html);
@@ -115,7 +116,7 @@ for (const [name,html] of Object.entries(pages)) {
     const id=name==='UpdateHTML'?'check':'refresh';
     for(let i=0;i<20;i++) h.click(id);
     await settle();
-    assert.equal(h.calls.length,2*expectedInitial[name],name+' repeated overlapping clicks');
+    assert.equal(h.calls.length,expectedInitial[name]+callsPerRefresh[name],name+' repeated overlapping clicks');
     assert.equal(h.maxActive,1,name+' concurrent widget calls');
     assert.equal(h.elements.get(id).disabled,false,name+' button remained disabled');
     if(name==='SetupHTML') {
@@ -141,6 +142,7 @@ for (const [name,html] of Object.entries(pages)) {
     }
     const failed=host(html,{fail:true});
     await settle();
+    if(name==='SetupHTML'){await failed.click(id);await settle();}
     const count=failed.calls.length;
     for(let i=0;i<20;i++) failed.emit({toolOutput:{unrelated:'error event'}});
     await settle();
@@ -164,6 +166,8 @@ if (!baseline) {
   for(const metadata of shapes){
     const h=host(pages.SetupHTML,{initialMetadata:metadata});
     await settle();
+    assert.equal(h.calls.length,0,'mounted card initiated calls instead of rendering host output');
+    await h.click('refresh');await settle();
     assert.deepEqual(h.calls.map(c=>c.params.uiContext),[contextA,contextA],'initial workspace calls lost hidden context');
     const before=h.calls.length;
     h.emit({toolResponseMetadata:{_meta:{[contextKey]:contextB}}});
@@ -178,9 +182,10 @@ if (!baseline) {
   }
   const renewed=host(pages.SetupHTML,{initialMetadata:shapes[0],resultMetadata:{[contextKey]:contextB}});
   await settle();
+  await renewed.click('refresh');await settle();
   assert.deepEqual(renewed.calls.map(c=>c.params.uiContext),[contextA,contextB],'returned fresh context was not retained');
   await renewed.click('refresh');await settle();
-  assert.ok(renewed.calls.slice(1).every(c=>c.params.uiContext===contextB),'initial metadata overwrote refreshed context');
+  assert.ok(renewed.calls.slice(2).every(c=>c.params.uiContext===contextB),'initial metadata overwrote refreshed context');
   const delayed=host(pages.SetupHTML);
   await settle();
   const initialCount=delayed.calls.length;
@@ -217,10 +222,12 @@ if (!baseline) {
         async beforeResult(){if(first){first=false;entered();await pending;}},
         resultMetadata:(_name,params)=>params.uiContext?{[contextKey]:params.uiContext}:null,
       });
+      await settle();
+      const clicked=race.click('refresh');
       await started;
       race.setHostMetadata(replacement?{[contextKey]:replacement}:null);
       if(notification==='toolOutput')race.emit({toolOutput:{projects:[]}});
-      release();await settle();
+      release();await clicked;await settle();
       assert.equal(race.calls.length,1,'changed workspace continued the old read chain');
       assert.ok(race.elements.get('error').textContent.includes('workspace changed'),'changed workspace did not stop the stale result');
       const before=race.calls.length;
@@ -243,7 +250,7 @@ if (!baseline) {
     {content:[],expected:'The request failed.'},
   ];
   for (const fixture of errors) {
-    const h=host(pages.SetupHTML,{feedback:false,toolError:{name:'set_project_root',content:fixture.content}});
+    const h=host(pages.SetupHTML,{feedback:false,toolError:{name:'set_project_root',content:fixture.content},initialOutput:{projects:[{name:'Fixture',selector:'fixture'}]}});
     await settle();
     const previousStatus=h.elements.get('status').innerHTML;
     const before=h.calls.length;

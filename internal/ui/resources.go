@@ -3,7 +3,7 @@ package ui
 import "github.com/modelcontextprotocol/go-sdk/mcp"
 
 const (
-	SetupURI  = "ui://codexify-go/setup/v3/mcp-app.html"
+	SetupURI  = "ui://codexify-go/setup/v4/mcp-app.html"
 	DiffURI   = "ui://codexify-go/diff/v1/mcp-app.html"
 	ChatURI   = "ui://codexify-go/markdown-chat/v2/mcp-app.html"
 	UpdateURI = "ui://codexify-go/self-update/v2/mcp-app.html"
@@ -92,7 +92,7 @@ const SetupHTML = `<!doctype html>
 <body>
 <div class="card">
   <div class="row"><strong>Codexify Go</strong><button id="refresh">Refresh</button><button id="scratch">Scratch</button><button id="switch" hidden>Switch project</button></div>
-  <div id="status" class="muted">Loading workspace status...</div>
+  <div id="status" class="muted">No live status loaded. Press Refresh to fetch it.</div>
   <div id="projects"></div>
   <div id="error"></div>
 </div>
@@ -149,7 +149,8 @@ function renderProjects(list){
 function renderPayload(value){
   const p=structured(value)||value;
   if(!p||typeof p!=="object")return;
-  if(Object.hasOwn(p,"workspace")||Object.hasOwn(p,"awaitingSelection"))renderStatus(p);
+  if(Object.hasOwn(p,"projectRoot"))renderStatus({workspace:p});
+  else if(Object.hasOwn(p,"workspace")||Object.hasOwn(p,"awaitingSelection")||Object.hasOwn(p,"selected"))renderStatus(p);
   if(Array.isArray(p.projects))renderProjects(p);
 }
 // Host globals are state notifications, never an instruction to call tools.
@@ -176,7 +177,7 @@ document.getElementById("scratch").onclick=()=>run(async()=>{await call("set_pro
 switchBtn.onclick=()=>run(async()=>{await call("setup_ui_switch_project",{expectedPath:switchBtn.dataset.path||""});await load()});
 function escapeHTML(v){return String(v||"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
 window.addEventListener("openai:set_globals",renderHost);
-renderHost();refresh();
+renderHost();
 </script>
 </body>
 </html>`

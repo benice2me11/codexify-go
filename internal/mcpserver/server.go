@@ -487,9 +487,19 @@ func (r *Runtime) registerTools() {
 		Meta:        ui.SetupToolMeta(),
 		Name:        "list_projects",
 		Description: "List selectable projects below the configured access root before binding this ChatGPT conversation.",
-	}, func(_ context.Context, _ *mcp.CallToolRequest, in ListProjectsInput) (*mcp.CallToolResult, projects.ListOutput, error) {
+	}, func(_ context.Context, req *mcp.CallToolRequest, in ListProjectsInput) (*mcp.CallToolResult, projects.ListOutput, error) {
 		out, err := r.projects.List(in.Query, in.Limit)
-		return nil, out, err
+		if err != nil {
+			return nil, out, err
+		}
+		status, err := r.projects.Status(r.requestMeta(req))
+		if err != nil {
+			return nil, out, err
+		}
+		out.Workspace = status.Workspace
+		out.Selected = status.Selected
+		out.AwaitingSelection = status.AwaitingSelection
+		return nil, out, nil
 	})
 
 	mcp.AddTool(r.server, &mcp.Tool{

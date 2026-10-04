@@ -52,6 +52,7 @@ function host(html, options = {}) {
     Object.assign(window.openai, globals);
     window.dispatchEvent({type:'openai:set_globals',detail:{globals}});
   }
+  let bound=false;
   window.openai = {toolOutput:options.initialOutput||null, toolResponseMetadata:options.initialMetadata||null, async callTool(name, params) {
     if (calls.length >= 64) { exhausted = true; throw new Error('synthetic call budget exhausted'); }
     calls.push({name, params:JSON.parse(JSON.stringify(params))});
@@ -62,13 +63,13 @@ function host(html, options = {}) {
       if (options.toolError?.name === name) return {isError:true,content:options.toolError.content};
       let data;
       switch (name) {
-        case 'setup_status': data={workspace:{projectRoot:'C:\\fixture'},awaitingSelection:false}; break;
+        case 'setup_status': data=bound?{workspace:{projectRoot:'C:\\fixture'},awaitingSelection:false}:{awaitingSelection:true,workspace:null}; break;
         case 'list_projects': data={projects:[{name:'Fixture',selector:'fixture'}]}; break;
         case 'chat_read': data={user_text:'Fixture unread message',state:'ready'}; break;
         case 'chat_write': data={state:'written'}; break;
         case 'self_update_status': data={status:'up_to_date',currentVersion:'fixture-v1',detail:'fixture status'}; break;
-        case 'set_project_root': data={workspace:{projectRoot:'C:\\fixture'}}; break;
-        case 'setup_ui_switch_project': data={awaitingSelection:true,workspace:null}; break;
+        case 'set_project_root': bound=true; data={workspace:{projectRoot:'C:\\fixture'}}; break;
+        case 'setup_ui_switch_project': bound=false; data={awaitingSelection:true,workspace:null}; break;
         default: throw new Error('unexpected fixture tool '+name);
       }
       if(options.beforeResult)await options.beforeResult(name,params);
@@ -120,12 +121,13 @@ for (const [name,html] of Object.entries(pages)) {
     assert.equal(h.maxActive,1,name+' concurrent widget calls');
     assert.equal(h.elements.get(id).disabled,false,name+' button remained disabled');
     if(name==='SetupHTML') {
+      assert.equal(h.elements.get('projects').children.length,1,'project list did not render');
       const before=h.calls.length;
       for(let i=0;i<20;i++) h.click('scratch');
       await settle();
-      assert.equal(h.calls.length,before+3,'setup mutation should run once then two reads');
+      assert.equal(h.calls.length,before+2,'setup mutation should run once then one bound read');
       assert.equal(h.calls.filter(c=>c.name==='set_project_root').length,1);
-      assert.equal(h.elements.get('projects').children.length,1,'project list did not render');
+      assert.equal(h.elements.get('projects').children.length,0,'bound workspace must hide the picker');
       h.emit({toolOutput:{workspace:{projectRoot:'C:\\passive'},awaitingSelection:false}});
       assert.ok(h.elements.get('status').innerHTML.includes('passive'));
     } else if(name==='ChatHTML') {

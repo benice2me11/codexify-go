@@ -489,7 +489,13 @@ func (r *Runtime) registerTools() {
 		Title:       "Open Codexify setup",
 		Description: "Call setup once to open workspace selection and this conversation's Markdown chat. No setup reference is required on this server. When the intended project is unclear or the user only says hello, leave the picker open and wait; do not select scratch by default. chat_await can wait for a selection without any workspace. After selection call get_agent_brief. Connector version marker: " + r.schemaVer + "; copy it into connectorVersion unchanged.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in SetupInput) (*mcp.CallToolResult, SetupStatusOutput, error) {
-		return r.setupStatus(ctx, req, SetupStatusInput{UIContext: in.UIContext, ConversationVersion: in.ConnectorVersion})
+		res, out, err := r.setupStatus(ctx, req, SetupStatusInput{UIContext: in.UIContext, ConversationVersion: in.ConnectorVersion})
+		if err == nil && out.Workspace == nil && out.AwaitingSelection {
+			if listing, lerr := r.projects.List("", 40); lerr == nil {
+				out.Projects = &listing
+			}
+		}
+		return res, out, err
 	})
 
 	mcp.AddTool(r.server, &mcp.Tool{
@@ -954,6 +960,7 @@ type SetupStatusOutput struct {
 	Selected            bool                    `json:"selected"`
 	AwaitingSelection   bool                    `json:"awaitingSelection"`
 	Workspace           *projects.WorkspaceInfo `json:"workspace,omitempty"`
+	Projects            *projects.ListOutput    `json:"projects,omitempty"`
 }
 
 type SetupInput struct {

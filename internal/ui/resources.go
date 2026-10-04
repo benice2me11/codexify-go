@@ -3,7 +3,7 @@ package ui
 import "github.com/modelcontextprotocol/go-sdk/mcp"
 
 const (
-	SetupURI  = "ui://codexify-go/setup/v4/mcp-app.html"
+	SetupURI  = "ui://codexify-go/setup/v5/mcp-app.html"
 	DiffURI   = "ui://codexify-go/diff/v1/mcp-app.html"
 	ChatURI   = "ui://codexify-go/markdown-chat/v2/mcp-app.html"
 	UpdateURI = "ui://codexify-go/self-update/v2/mcp-app.html"
@@ -139,12 +139,18 @@ async function call(name,args={}){
   }
   return result;
 }
-let busy=false;
+let busy=false,bound=false;
+function errorText(e){
+  const v=e&&typeof e==="object"?(e.message||(e.data&&e.data.message)||JSON.stringify(e)):String(e);
+  return String(v||"Unknown error").replace(/\s+/g," ").trim().slice(0,512);
+}
 function renderStatus(s){
     const w=s.workspace||null;
+    bound=!!w;
     statusEl.innerHTML=w?("Selected: <code>"+escapeHTML(w.projectRoot||w.workspaceRoot||"")+"</code>"+(w.managedWorktree?" (worktree)":"")):(s.awaitingSelection?"Choose a workspace.":"No workspace selected.");
     switchBtn.hidden=!w;
     switchBtn.dataset.path=w&&w.projectRoot||"";
+    if(bound)projectsEl.textContent="";
 }
 function renderProjects(list){
     projectsEl.textContent="";
@@ -160,7 +166,8 @@ function renderPayload(value){
   if(!p||typeof p!=="object")return;
   if(Object.hasOwn(p,"projectRoot"))renderStatus({workspace:p});
   else if(Object.hasOwn(p,"workspace")||Object.hasOwn(p,"awaitingSelection")||Object.hasOwn(p,"selected"))renderStatus(p);
-  if(Array.isArray(p.projects))renderProjects(p);
+  const pl=p.projects;
+  if(pl&&!bound)renderProjects(Array.isArray(pl)?{projects:pl}:pl);
 }
 // Host globals are state notifications, never an instruction to call tools.
 function renderHost(event){
@@ -174,11 +181,11 @@ async function run(action){
   if(busy)return;
   busy=true;errorEl.textContent="";
   for(const button of document.querySelectorAll("button"))button.disabled=true;
-  try{await action()}catch(e){errorEl.textContent=String(e)}finally{
+  try{await action()}catch(e){errorEl.textContent=errorText(e)}finally{
     busy=false;for(const button of document.querySelectorAll("button"))button.disabled=false;
   }
 }
-async function load(){renderStatus(structured(await call("setup_status",{}))||{});renderProjects(structured(await call("list_projects",{limit:40}))||{})}
+async function load(){const s=structured(await call("setup_status",{}))||{};renderStatus(s);if(bound)return;renderProjects(structured(await call("list_projects",{limit:40}))||{})}
 function refresh(){return run(load)}
 function selectProject(path){return run(async()=>{await call("set_project_root",{path});await load()})}
 document.getElementById("refresh").onclick=refresh;

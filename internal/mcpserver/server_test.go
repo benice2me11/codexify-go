@@ -384,8 +384,11 @@ func TestUIResourcesAndToolMetadata(t *testing.T) {
 	for _, tool := range listed.Tools {
 		metaByName[tool.Name] = tool.Meta
 	}
-	if got := metaByName["list_projects"]["ui/resourceUri"]; got != ui.SetupURI {
-		t.Fatalf("list_projects UI resource = %#v", got)
+	if got := metaByName["setup"]["ui/resourceUri"]; got != ui.SetupURI {
+		t.Fatalf("setup UI resource = %#v", got)
+	}
+	if got, ok := metaByName["list_projects"]["ui/resourceUri"]; ok {
+		t.Fatalf("list_projects must stay app-callable only, UI resource = %#v", got)
 	}
 	if got := metaByName["show_diff"]["ui/resourceUri"]; got != ui.DiffURI {
 		t.Fatalf("show_diff UI resource = %#v", got)

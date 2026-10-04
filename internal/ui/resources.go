@@ -22,6 +22,15 @@ func SetupToolMeta() mcp.Meta {
 	}
 }
 
+func AppCallableToolMeta() mcp.Meta {
+	return mcp.Meta{
+		"ui": map[string]any{
+			"visibility": []string{"model", "app"},
+		},
+		"openai/widgetAccessible": true,
+	}
+}
+
 func AppOnlyToolMeta() mcp.Meta {
 	return mcp.Meta{
 		"ui": map[string]any{

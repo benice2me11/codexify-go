@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 )
 
 // PollWatcher taps the tunnel child's JSON log stream and reports the
@@ -16,15 +17,21 @@ import (
 type PollWatcher struct {
 	mu        sync.Mutex
 	threshold int
+	cooldown  time.Duration
+	now       func() time.Time
+	lastTrip  time.Time
 	failures  int
 	buf       []byte
 }
 
-func NewPollWatcher(threshold int) *PollWatcher {
+func NewPollWatcher(threshold int, cooldown time.Duration) *PollWatcher {
 	if threshold < 1 {
 		threshold = 1
 	}
-	return &PollWatcher{threshold: threshold}
+	if cooldown <= 0 {
+		cooldown = 6 * time.Minute
+	}
+	return &PollWatcher{threshold: threshold, cooldown: cooldown, now: time.Now}
 }
 
 // Reset clears the failure count; call when a new child process starts.
@@ -77,12 +84,18 @@ func (w *PollWatcher) scan(line []byte) {
 }
 
 // Check implements supervisor.Checker: it only fails once the consecutive
-// poll-failure count reaches the configured threshold.
+// poll-failure count reaches the configured threshold and the restart
+// cooldown has elapsed. The cooldown survives child restarts so a sustained
+// control-plane outage produces a bounded restart rate instead of churn.
 func (w *PollWatcher) Check(context.Context) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.failures >= w.threshold {
-		return fmt.Errorf("control-plane poll failed %d consecutive times", w.failures)
+	if w.failures < w.threshold {
+		return nil
 	}
-	return nil
+	if !w.lastTrip.IsZero() && w.now().Sub(w.lastTrip) < w.cooldown {
+		return nil
+	}
+	w.lastTrip = w.now()
+	return fmt.Errorf("control-plane poll failed %d consecutive times", w.failures)
 }

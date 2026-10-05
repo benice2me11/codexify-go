@@ -10,15 +10,23 @@ import (
 )
 
 type Factory struct {
-	Config config.Config
-	Output io.Writer
+	Config  config.Config
+	Output  io.Writer
+	Watcher *PollWatcher
 }
 
 func (f *Factory) Start(ctx context.Context) (supervisor.Process, error) {
 	_ = os.Remove(f.Config.Tunnel.HealthURLFile)
+	if f.Watcher != nil {
+		f.Watcher.Reset()
+	}
 	executable, err := ResolveExecutable(ctx, f.Config.Tunnel)
 	if err != nil {
 		return nil, err
+	}
+	output := f.Output
+	if f.Watcher != nil {
+		output = io.MultiWriter(output, f.Watcher)
 	}
 	cf := supervisor.CommandFactory{
 		Spec: supervisor.CommandSpec{
@@ -26,7 +34,7 @@ func (f *Factory) Start(ctx context.Context) (supervisor.Process, error) {
 			Args: f.Config.TunnelArgs(),
 			Env:  f.Config.Tunnel.Environment,
 		},
-		Output: f.Output,
+		Output: output,
 	}
 	return cf.Start(ctx)
 }

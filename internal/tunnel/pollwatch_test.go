@@ -1,9 +1,9 @@
 package tunnel
 
 import (
-	"time"
 	"context"
 	"testing"
+	"time"
 )
 
 func pollFailLine() string {
@@ -82,6 +82,9 @@ func TestPollWatcherCooldownBoundsRestartRate(t *testing.T) {
 	w.Write([]byte(pollFailLine()))
 	if err := w.Check(context.Background()); err == nil {
 		t.Fatal("first trip must be unhealthy")
+	}
+	if err := w.Check(context.Background()); err == nil {
+		t.Fatal("tripped watcher must keep failing until Reset so the supervisor reaches its failure threshold")
 	}
 	w.Reset()
 	w.Write([]byte(pollFailLine()))

@@ -1,6 +1,7 @@
 package tunnel
 
 import (
+	"time"
 	"context"
 	"testing"
 )
@@ -10,7 +11,7 @@ func pollFailLine() string {
 }
 
 func TestPollWatcherCountsConsecutiveFailures(t *testing.T) {
-	w := NewPollWatcher(3)
+	w := NewPollWatcher(3, 0)
 	if err := w.Check(context.Background()); err != nil {
 		t.Fatalf("healthy before lines: %v", err)
 	}
@@ -31,7 +32,7 @@ func TestPollWatcherCountsConsecutiveFailures(t *testing.T) {
 }
 
 func TestPollWatcherResetsOnAliveSignals(t *testing.T) {
-	w := NewPollWatcher(2)
+	w := NewPollWatcher(2, 0)
 	w.Write([]byte(pollFailLine()))
 	w.Write([]byte(pollFailLine()))
 	w.Write([]byte(`{"msg":"tunnel metadata fetched","component":"controlplane"}` + "\n"))
@@ -46,7 +47,7 @@ func TestPollWatcherResetsOnAliveSignals(t *testing.T) {
 }
 
 func TestPollWatcherIgnoresUnrelatedLinesAndPartialWrites(t *testing.T) {
-	w := NewPollWatcher(2)
+	w := NewPollWatcher(2, 0)
 	w.Write([]byte("noise\n"))
 	w.Write([]byte(`{"msg":"unrelated"}` + "\n"))
 	if err := w.Check(context.Background()); err != nil {
@@ -63,7 +64,7 @@ func TestPollWatcherIgnoresUnrelatedLinesAndPartialWrites(t *testing.T) {
 }
 
 func TestPollWatcherReset(t *testing.T) {
-	w := NewPollWatcher(1)
+	w := NewPollWatcher(1, 0)
 	w.Write([]byte(pollFailLine()))
 	if err := w.Check(context.Background()); err == nil {
 		t.Fatal("expected unhealthy at threshold 1")
@@ -71,5 +72,24 @@ func TestPollWatcherReset(t *testing.T) {
 	w.Reset()
 	if err := w.Check(context.Background()); err != nil {
 		t.Fatalf("reset must clear failures: %v", err)
+	}
+}
+
+func TestPollWatcherCooldownBoundsRestartRate(t *testing.T) {
+	w := NewPollWatcher(1, 60_000_000_000) // 60s cooldown
+	fakeNow := time.Now()
+	w.now = func() time.Time { return fakeNow }
+	w.Write([]byte(pollFailLine()))
+	if err := w.Check(context.Background()); err == nil {
+		t.Fatal("first trip must be unhealthy")
+	}
+	w.Reset()
+	w.Write([]byte(pollFailLine()))
+	if err := w.Check(context.Background()); err != nil {
+		t.Fatalf("inside cooldown must stay healthy: %v", err)
+	}
+	fakeNow = fakeNow.Add(61 * time.Second)
+	if err := w.Check(context.Background()); err == nil {
+		t.Fatal("after cooldown the next check must trip again")
 	}
 }

@@ -176,7 +176,7 @@ func runWithUserWorker(ctx context.Context, cfg config.Config, configPath string
 	var tunnelHealth supervisor.Checker = health.NewURLFileChecker(cfg.Tunnel.HealthURLFile)
 	var pollWatcher *tunnel.PollWatcher
 	if cfg.Tunnel.PollFailureThreshold > 0 {
-		pollWatcher = tunnel.NewPollWatcher(cfg.Tunnel.PollFailureThreshold)
+		pollWatcher = tunnel.NewPollWatcher(cfg.Tunnel.PollFailureThreshold, cfg.Tunnel.PollRestartCooldown.Duration())
 		tunnelHealth = health.Composite{Checkers: []supervisor.Checker{tunnelHealth, pollWatcher}}
 	}
 	tunnelSupervisor := &supervisor.Supervisor{

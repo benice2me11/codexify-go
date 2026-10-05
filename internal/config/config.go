@@ -163,17 +163,21 @@ type ExperimentalConfig struct {
 }
 
 type TunnelConfig struct {
-	Executable          string            `json:"executable,omitempty"`
-	ManagedDir          string            `json:"managedDir,omitempty"`
-	TunnelID            string            `json:"tunnelId"`
-	APIKeyRef           string            `json:"apiKeyRef"`
-	OrganizationID      string            `json:"organizationId,omitempty"`
-	MCPServerURL        string            `json:"mcpServerUrl"`
-	MCPAuthorizationRef string            `json:"mcpAuthorizationRef,omitempty"`
-	StartupWaitTimeout  Duration          `json:"startupWaitTimeout"`
-	HealthURLFile       string            `json:"healthUrlFile"`
-	Environment         map[string]string `json:"environment,omitempty"`
-	ExtraArgs           []string          `json:"extraArgs,omitempty"`
+	Executable          string   `json:"executable,omitempty"`
+	ManagedDir          string   `json:"managedDir,omitempty"`
+	TunnelID            string   `json:"tunnelId"`
+	APIKeyRef           string   `json:"apiKeyRef"`
+	OrganizationID      string   `json:"organizationId,omitempty"`
+	MCPServerURL        string   `json:"mcpServerUrl"`
+	MCPAuthorizationRef string   `json:"mcpAuthorizationRef,omitempty"`
+	StartupWaitTimeout  Duration `json:"startupWaitTimeout"`
+	HealthURLFile       string   `json:"healthUrlFile"`
+	// PollFailureThreshold restarts the tunnel child after this many
+	// consecutive control-plane poll failures seen in its log stream.
+	// Zero disables the poll watcher.
+	PollFailureThreshold int               `json:"pollFailureThreshold"`
+	Environment          map[string]string `json:"environment,omitempty"`
+	ExtraArgs            []string          `json:"extraArgs,omitempty"`
 }
 
 type SupervisorConfig struct {
@@ -248,8 +252,9 @@ func Default() Config {
 			MaxWaitMS: 55_000,
 		},
 		Tunnel: TunnelConfig{
-			StartupWaitTimeout: Duration(15 * time.Second),
-			HealthURLFile:      filepath.Join(os.TempDir(), "codexify-go-tunnel-health.url"),
+			StartupWaitTimeout:   Duration(15 * time.Second),
+			HealthURLFile:        filepath.Join(os.TempDir(), "codexify-go-tunnel-health.url"),
+			PollFailureThreshold: 3,
 		},
 		Supervisor: SupervisorConfig{
 			MinBackoff:             Duration(2 * time.Second),
@@ -509,6 +514,9 @@ func (c Config) Validate() error {
 		errs = append(errs, errors.New("tunnel.mcpServerUrl is required"))
 	} else if err := validateMCPServerURL(c.Tunnel.MCPServerURL); err != nil {
 		errs = append(errs, err)
+	}
+	if c.Tunnel.PollFailureThreshold < 0 || c.Tunnel.PollFailureThreshold > 50 {
+		errs = append(errs, errors.New("tunnel.pollFailureThreshold must be between 0 and 50"))
 	}
 	if c.Supervisor.MinBackoff.Duration() <= 0 {
 		errs = append(errs, errors.New("supervisor.minBackoff must be > 0"))

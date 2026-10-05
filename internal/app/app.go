@@ -173,9 +173,15 @@ func runWithUserWorker(ctx context.Context, cfg config.Config, configPath string
 		Policy: policy,
 		Log:    logger.With("component", "user_worker"),
 	}
+	var tunnelHealth supervisor.Checker = health.NewURLFileChecker(cfg.Tunnel.HealthURLFile)
+	var pollWatcher *tunnel.PollWatcher
+	if cfg.Tunnel.PollFailureThreshold > 0 {
+		pollWatcher = tunnel.NewPollWatcher(cfg.Tunnel.PollFailureThreshold)
+		tunnelHealth = health.Composite{Checkers: []supervisor.Checker{tunnelHealth, pollWatcher}}
+	}
 	tunnelSupervisor := &supervisor.Supervisor{
-		Factory: &tunnel.Factory{Config: cfg, Output: logFile},
-		Health:  health.NewURLFileChecker(cfg.Tunnel.HealthURLFile),
+		Factory: &tunnel.Factory{Config: cfg, Output: logFile, Watcher: pollWatcher},
+		Health:  tunnelHealth,
 		Policy: supervisor.Policy{
 			MinBackoff:             cfg.Supervisor.MinBackoff.Duration(),
 			MaxBackoff:             cfg.Supervisor.MaxBackoff.Duration(),

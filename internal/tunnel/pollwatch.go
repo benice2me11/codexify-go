@@ -20,6 +20,7 @@ type PollWatcher struct {
 	cooldown  time.Duration
 	now       func() time.Time
 	lastTrip  time.Time
+	tripped   bool
 	failures  int
 	buf       []byte
 }
@@ -39,6 +40,7 @@ func (w *PollWatcher) Reset() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.failures = 0
+	w.tripped = false
 	w.buf = w.buf[:0]
 }
 
@@ -78,24 +80,31 @@ func (w *PollWatcher) scan(line []byte) {
 		w.failures++
 	case rec.Msg == "tunnel metadata fetched" || strings.Contains(rec.Msg, "session connected"):
 		w.failures = 0
+		w.tripped = false
 	case rec.RequestID != "" && rec.RequestID != "missing_request_id":
 		w.failures = 0
+		w.tripped = false
 	}
 }
 
-// Check implements supervisor.Checker: it only fails once the consecutive
-// poll-failure count reaches the configured threshold and the restart
-// cooldown has elapsed. The cooldown survives child restarts so a sustained
-// control-plane outage produces a bounded restart rate instead of churn.
+// Check implements supervisor.Checker. Once tripped it keeps failing on
+// every check until the supervisor restarts the child (Reset) or the poller
+// recovers on its own, so the supervisor sees enough consecutive failures to
+// act. The cooldown only suppresses a *new* trip after a restart, bounding
+// the restart rate during a sustained outage instead of causing churn.
 func (w *PollWatcher) Check(context.Context) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.tripped {
+		return fmt.Errorf("control-plane poll failed %d consecutive times", w.failures)
+	}
 	if w.failures < w.threshold {
 		return nil
 	}
 	if !w.lastTrip.IsZero() && w.now().Sub(w.lastTrip) < w.cooldown {
 		return nil
 	}
+	w.tripped = true
 	w.lastTrip = w.now()
 	return fmt.Errorf("control-plane poll failed %d consecutive times", w.failures)
 }

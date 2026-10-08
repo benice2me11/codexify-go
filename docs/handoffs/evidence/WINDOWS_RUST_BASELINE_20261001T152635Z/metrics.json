@@ -1,0 +1,71 @@
+﻿{
+    "windowStartUtc":  "2026-10-01T15:26:40.0000000+00:00",
+    "windowEndUtc":  "2026-10-01T15:28:59.6847897+00:00",
+    "windowBoundaryReason":  "Starts after setup call 904 and before workload call 905; ends before post-collection call completion",
+    "workloadCallIds":  [
+                            905,
+                            906,
+                            907,
+                            908,
+                            909,
+                            910,
+                            911,
+                            912,
+                            913,
+                            914,
+                            915,
+                            916,
+                            917,
+                            918,
+                            919
+                        ],
+    "workloadCalls":  15,
+    "workloadErrors":  0,
+    "byTool":  [
+                   {
+                       "tool":  "list_projects",
+                       "count":  5,
+                       "ok":  5,
+                       "minHandlerMs":  1,
+                       "maxHandlerMs":  2,
+                       "meanHandlerMs":  1.8
+                   },
+                   {
+                       "tool":  "read_file",
+                       "count":  5,
+                       "ok":  5,
+                       "minHandlerMs":  69,
+                       "maxHandlerMs":  75,
+                       "meanHandlerMs":  71.2
+                   },
+                   {
+                       "tool":  "exec_command",
+                       "count":  5,
+                       "ok":  5,
+                       "minHandlerMs":  1297,
+                       "maxHandlerMs":  1350,
+                       "meanHandlerMs":  1319.6
+                   }
+               ],
+    "parseErrors":  0,
+    "parsedTunnelLogLines":  946,
+    "tunnelWindowRecords":  15,
+    "forwardedRecords":  15,
+    "uniqueForwardedRequestIds":  15,
+    "uniqueForwardedCommandIds":  15,
+    "clientInstanceIds":  [
+                              "45b47550e78a6608855a19e143837775"
+                          ],
+    "peakForwardedRecordsPerOneSecondBucket":  1,
+    "warnErrorOrRetryMatches":  0,
+    "lifecycleLogRecords":  0,
+    "messageCounts":  [
+                          {
+                              "Name":  "dispatcher forwarded command to MCP server",
+                              "Count":  15
+                          }
+                      ],
+    "handlerLatencyIsNotEndToEndLatency":  true,
+    "otherClientsExplicitlyPaused":  false,
+    "analysisVerification":  "Assertions passed: 15 events, 3 groups of 5, all status=ok; array enumeration and bucket count verified."
+}

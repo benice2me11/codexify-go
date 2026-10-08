@@ -1,7 +1,9 @@
 package upstream
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -245,6 +247,102 @@ func TestOptionalUpstreamFailureIsReported(t *testing.T) {
 	report := bridge.Report()
 	if len(report) != 1 || !strings.Contains(report[0], "FAILED") {
 		t.Fatalf("unexpected report: %#v", report)
+	}
+}
+
+func TestConnectSourceHonorsLegacyProtocolVersion(t *testing.T) {
+	var spec config.UpstreamMCPConfig
+	if err := json.Unmarshal([]byte(`{"protocolVersion":"2025-11-25"}`), &spec); err != nil {
+		t.Fatal(err)
+	}
+	spec.Name = "legacy"
+	spec.Transport = "stdio"
+	spec.Mode = "catalog"
+	spec.Command = os.Args[0]
+	spec.Args = []string{"-test.run=^TestLegacyStdioHelper$"}
+	spec.Env = map[string]string{"CODEXIFY_GO_LEGACY_STDIO_HELPER": "1"}
+
+	src, err := connectSource(context.Background(), spec, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("legacy stdio upstream failed to connect: %v", err)
+	}
+	defer src.session.Close()
+	if src.info == nil || src.info.Name != "legacy-helper" {
+		t.Fatalf("unexpected server info: %+v", src.info)
+	}
+	if len(src.tools) != 1 || src.tools["echo"] == nil {
+		t.Fatalf("unexpected tools: %#v", src.tools)
+	}
+}
+
+func TestLegacyStdioHelper(t *testing.T) {
+	if os.Getenv("CODEXIFY_GO_LEGACY_STDIO_HELPER") != "1" {
+		return
+	}
+	type request struct {
+		JSONRPC string          `json:"jsonrpc"`
+		ID      json.RawMessage `json:"id"`
+		Method  string          `json:"method"`
+		Params  json.RawMessage `json:"params"`
+	}
+	scanner := bufio.NewScanner(os.Stdin)
+	encoder := json.NewEncoder(os.Stdout)
+	for scanner.Scan() {
+		var req request
+		if err := json.Unmarshal(scanner.Bytes(), &req); err != nil {
+			os.Exit(2)
+		}
+		switch req.Method {
+		case "server/discover":
+			// Simulate older stdio servers that close instead of returning
+			// MethodNotFound for the 2026-07-28 discovery probe.
+			os.Exit(17)
+		case "initialize":
+			var params struct {
+				ProtocolVersion string `json:"protocolVersion"`
+			}
+			if err := json.Unmarshal(req.Params, &params); err != nil || params.ProtocolVersion != "2025-11-25" {
+				os.Exit(18)
+			}
+			if err := encoder.Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      req.ID,
+				"result": map[string]any{
+					"protocolVersion": "2025-11-25",
+					"capabilities":    map[string]any{},
+					"serverInfo":      map[string]any{"name": "legacy-helper", "version": "1"},
+				},
+			}); err != nil {
+				os.Exit(3)
+			}
+		case "notifications/initialized":
+			continue
+		case "tools/list":
+			if err := encoder.Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      req.ID,
+				"result": map[string]any{
+					"tools": []any{map[string]any{
+						"name":        "echo",
+						"description": "fixture",
+						"inputSchema": map[string]any{"type": "object"},
+					}},
+				},
+			}); err != nil {
+				os.Exit(4)
+			}
+		default:
+			if len(req.ID) > 0 && string(req.ID) != "null" {
+				_ = encoder.Encode(map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req.ID,
+					"error":   map[string]any{"code": -32601, "message": "method not found"},
+				})
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		os.Exit(5)
 	}
 }
 

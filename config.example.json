@@ -13,6 +13,12 @@
     "workspaceRoot": ".",
     "authEnabled": true,
     "maxRequestBodyBytes": 4194304,
+    "diagnostics": {
+      "enabled": false,
+      "directory": ".codexify-go/diagnostics",
+      "maxEvents": 20000,
+      "maxDuration": "10m"
+    },
     "multiProject": false,
     "projectScanDepth": 2,
     "worktrees": {

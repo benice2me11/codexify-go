@@ -6,9 +6,11 @@ This handoff defines the final dogfooding and cutover validation required before
 
 This document is a **future test specification**. Do not perform the cutover merely because this file was opened. Start only when the user explicitly asks to begin the Rust -> Go replacement test.
 
-## Active cutover run
+## Active cutover runs
 
 The first real Linux cutover run started on 2026-09-29 after explicit user approval. Live evidence and phase status are recorded in `docs/handoffs/RUST_TO_GO_CUTOVER_REPORT.md`.
+
+The first real Windows cutover run also started on 2026-09-29 after explicit user approval. Windows-specific evidence, including the SCM/tunnel crash-recovery defect found during the run, is recorded in `docs/handoffs/WINDOWS_CUTOVER_REPORT.md`.
 
 The run uses the real ChatGPT connector that previously terminated in Rust Codexify 1.6.6. It is being switched in place to the Go implementation so reconnect, conversation binding, schema migration, and Rust-unavailable behavior are exercised rather than simulated.
 

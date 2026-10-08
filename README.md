@@ -264,6 +264,10 @@ and optional `headers`. `catalog` keeps the upstream tool set private behind the
 four `mcp_*` discovery/call tools; `direct` exposes tools as
 `<source>__<original-tool-name>`.
 
+For legacy upstreams that close instead of rejecting the modern
+`server/discover` probe, set `"protocolVersion": "2025-11-25"` on that
+upstream. Leave it unset to negotiate the newest protocol supported by the SDK.
+
 When an upstream tool returns a `ResourceLink`, `codexify-go` replaces its
 original URI with an opaque `codexify-go://upstream-resource/...` capability.
 Reading that capability proxies `resources/read` back to the originating MCP

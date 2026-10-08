@@ -1,0 +1,615 @@
+{
+    "investigation_date":  "2026-09-30",
+    "source_is_stopped_log":  true,
+    "source_sha256":  "b093a2384e7e531898c6b6dc6505a81808245bc17a18501272240301823b3f51",
+    "full_log":  {
+                     "source":  "C:\\Users\\FoxOS_User\\.codexify-go\\codexify-go.log",
+                     "sha256":  "b093a2384e7e531898c6b6dc6505a81808245bc17a18501272240301823b3f51",
+                     "histogram_utc_offset_minutes":  180,
+                     "file_lines":  83047,
+                     "file_json_objects":  83047,
+                     "file_blank_lines":  0,
+                     "file_invalid_json_lines":  0,
+                     "file_missing_or_invalid_timestamps":  0,
+                     "scoped_records":  83047,
+                     "messages":  {
+                                      "MCP server listening":  11,
+                                      "MCP startup probe completed with failure; starting control-plane poller for compatibility":  1,
+                                      "OAuth discovery failed":  16,
+                                      "Probing MCP server":  16,
+                                      "TunnelServiceClient created":  16,
+                                      "child exited or became unhealthy":  7,
+                                      "child health check failed":  3,
+                                      "child start failed":  1,
+                                      "child started":  27,
+                                      "client log level set":  16525,
+                                      "codexify-go starting":  11,
+                                      "codexify-go stopped":  7,
+                                      "command response deadline reached; dropping without posting a response":  3,
+                                      "control-plane route resolved":  16,
+                                      "dispatcher channels registered":  16,
+                                      "dispatcher forwarded command to MCP server":  16512,
+                                      "dispatcher received MCP upstream error; posted error response to control plane":  4,
+                                      "failed to connect to mcp":  1,
+                                      "harpoon enabled":  16,
+                                      "health server listening":  16,
+                                      "mcp channel route resolved":  16,
+                                      "mcp session initialized":  15,
+                                      "oauth discovery WWW-Authenticate probe failed":  2,
+                                      "oauth discovery request failed":  2,
+                                      "poll failed; backing off":  16,
+                                      "poller recovered; polling operational":  1,
+                                      "poller started":  16,
+                                      "poller stopped":  1,
+                                      "server connecting":  16540,
+                                      "server session connected":  16540,
+                                      "server session disconnected":  16539,
+                                      "session initialized":  15,
+                                      "starting control-plane poller":  16,
+                                      "stopping control-plane poller":  1,
+                                      "tls trust summary":  16,
+                                      "tunnel metadata fetch failed":  1,
+                                      "tunnel metadata fetched":  15,
+                                      "user worker started":  11,
+                                      "user worker starting":  11,
+                                      "waiting for MCP startup probe before OAuth discovery":  16,
+                                      "waiting for MCP startup probe before first control-plane poll":  16,
+                                      "≡ƒ⌐║ HEALTH URL: http://127.0.0.1:49495 (written to C:\\Users\\FoxOS_User\\.codexify-go\\tunnel-health.url)":  1,
+                                      "≡ƒ⌐║ HEALTH URL: http://127.0.0.1:49667 (written to C:\\Users\\FoxOS_User\\.codexify-go\\tunnel-health.url)":  1,
+                                      "≡ƒ⌐║ HEALTH URL: http://127.0.0.1:49703 (written to C:\\Users\\FoxOS_User\\.codexify-go\\tunnel-health.url)":  1,
+                                      "≡ƒ⌐║ HEALTH URL: http://127.0.0.1:49734 (written to C:\\Users\\FoxOS_User\\.codexify-go\\tunnel-health.url)":  1,
+                                      "≡ƒ⌐║ HEALTH URL: http://127.0.0.1:51951 (written to C:\\Users\\FoxOS_User\\.codexify-go\\tunnel-health.url)":  1,
+                                      "≡ƒ⌐║ HEALTH URL: http://127.0.0.1:52698 (written to C:\\Users\\FoxOS_User\\.codexify-go\\tunnel-health.url)":  1,
+                                      "≡ƒ⌐║ HEALTH URL: http://127.0.0.1:57330 (written to C:\\Users\\FoxOS_User\\.codexify-go\\tunnel-health.url)":  1,
+                                      "≡ƒ⌐║ HEALTH URL: http://127.0.0.1:58185 (written to C:\\Users\\FoxOS_User\\.codexify-go\\tunnel-health.url)":  1,
+                                      "≡ƒ⌐║ HEALTH URL: http://127.0.0.1:61403 (written to C:\\Users\\FoxOS_User\\.codexify-go\\tunnel-health.url)":  1,
+                                      "≡ƒ⌐║ HEALTH URL: http://127.0.0.1:63940 (written to C:\\Users\\FoxOS_User\\.codexify-go\\tunnel-health.url)":  1,
+                                      "≡ƒ⌐║ HEALTH URL: http://127.0.0.1:63989 (written to C:\\Users\\FoxOS_User\\.codexify-go\\tunnel-health.url)":  1,
+                                      "≡ƒ⌐║ HEALTH URL: http://127.0.0.1:64025 (written to C:\\Users\\FoxOS_User\\.codexify-go\\tunnel-health.url)":  1,
+                                      "≡ƒ⌐║ HEALTH URL: http://127.0.0.1:64121 (written to C:\\Users\\FoxOS_User\\.codexify-go\\tunnel-health.url)":  1,
+                                      "≡ƒ⌐║ HEALTH URL: http://127.0.0.1:64144 (written to C:\\Users\\FoxOS_User\\.codexify-go\\tunnel-health.url)":  1,
+                                      "≡ƒ⌐║ HEALTH URL: http://127.0.0.1:65169 (written to C:\\Users\\FoxOS_User\\.codexify-go\\tunnel-health.url)":  1,
+                                      "≡ƒ⌐║ HEALTH URL: http://127.0.0.1:65188 (written to C:\\Users\\FoxOS_User\\.codexify-go\\tunnel-health.url)":  1
+                                  },
+                     "field_names":  [
+                                         "addr",
+                                         "allow_plaintext_http",
+                                         "auth",
+                                         "channel",
+                                         "channels",
+                                         "client_instance_id",
+                                         "cmd_request_id",
+                                         "component",
+                                         "description",
+                                         "error",
+                                         "error_code",
+                                         "error_message",
+                                         "extra_bundle",
+                                         "failure_source",
+                                         "failures",
+                                         "http_endpoint",
+                                         "level",
+                                         "metadata_endpoint",
+                                         "method",
+                                         "msg",
+                                         "mtls_enabled",
+                                         "name",
+                                         "path",
+                                         "pid",
+                                         "poll_deadline_guardrail_ms",
+                                         "poll_deadline_ms",
+                                         "poll_endpoint",
+                                         "poll_timeout_ms",
+                                         "protocol_version",
+                                         "proxy_source",
+                                         "reason",
+                                         "request_id",
+                                         "response_content_type",
+                                         "response_endpoint",
+                                         "restart_in",
+                                         "retry_in_ms",
+                                         "route_kind",
+                                         "route_mode",
+                                         "route_name",
+                                         "rpc_method",
+                                         "rpc_request_id",
+                                         "runtime",
+                                         "server_name",
+                                         "server_version",
+                                         "service",
+                                         "session_id",
+                                         "status",
+                                         "status_code",
+                                         "system_trust",
+                                         "target",
+                                         "target_count",
+                                         "target_host",
+                                         "targets",
+                                         "time",
+                                         "timeout",
+                                         "transport",
+                                         "transport_error_kind",
+                                         "transports",
+                                         "tunnel_client_version",
+                                         "tunnel_executable",
+                                         "tunnel_id",
+                                         "tunnel_request_id",
+                                         "upstream_response_received",
+                                         "upstream_status",
+                                         "url",
+                                         "user",
+                                         "workspace"
+                                     ],
+                     "forwarded_log_records":  16512,
+                     "first_forwarded_log_time":  "2026-09-29T16:57:28.1177503+03:00",
+                     "last_forwarded_log_time":  "2026-09-29T21:13:26.2880027+03:00",
+                     "forwarded_by_minute":  {
+                                                 "2026-09-29T16:57+03:00":  5,
+                                                 "2026-09-29T16:58+03:00":  6,
+                                                 "2026-09-29T16:59+03:00":  1,
+                                                 "2026-09-29T17:00+03:00":  4,
+                                                 "2026-09-29T17:01+03:00":  3,
+                                                 "2026-09-29T17:03+03:00":  5,
+                                                 "2026-09-29T17:04+03:00":  3,
+                                                 "2026-09-29T17:05+03:00":  5,
+                                                 "2026-09-29T17:06+03:00":  2,
+                                                 "2026-09-29T17:07+03:00":  1,
+                                                 "2026-09-29T17:08+03:00":  8,
+                                                 "2026-09-29T17:09+03:00":  2,
+                                                 "2026-09-29T17:10+03:00":  4,
+                                                 "2026-09-29T17:11+03:00":  3,
+                                                 "2026-09-29T17:12+03:00":  7,
+                                                 "2026-09-29T17:13+03:00":  3,
+                                                 "2026-09-29T17:14+03:00":  7,
+                                                 "2026-09-29T17:15+03:00":  9,
+                                                 "2026-09-29T17:16+03:00":  5,
+                                                 "2026-09-29T17:17+03:00":  2,
+                                                 "2026-09-29T17:18+03:00":  2,
+                                                 "2026-09-29T17:19+03:00":  4,
+                                                 "2026-09-29T17:20+03:00":  3,
+                                                 "2026-09-29T17:23+03:00":  2,
+                                                 "2026-09-29T17:26+03:00":  3,
+                                                 "2026-09-29T17:30+03:00":  1,
+                                                 "2026-09-29T17:35+03:00":  5,
+                                                 "2026-09-29T17:37+03:00":  6,
+                                                 "2026-09-29T17:41+03:00":  2,
+                                                 "2026-09-29T17:42+03:00":  1023,
+                                                 "2026-09-29T17:43+03:00":  626,
+                                                 "2026-09-29T17:44+03:00":  600,
+                                                 "2026-09-29T17:45+03:00":  598,
+                                                 "2026-09-29T17:46+03:00":  71,
+                                                 "2026-09-29T17:47+03:00":  978,
+                                                 "2026-09-29T17:48+03:00":  102,
+                                                 "2026-09-29T17:49+03:00":  1032,
+                                                 "2026-09-29T17:50+03:00":  267,
+                                                 "2026-09-29T18:45+03:00":  4,
+                                                 "2026-09-29T19:25+03:00":  10,
+                                                 "2026-09-29T19:26+03:00":  8,
+                                                 "2026-09-29T19:28+03:00":  2,
+                                                 "2026-09-29T19:34+03:00":  3,
+                                                 "2026-09-29T19:43+03:00":  12,
+                                                 "2026-09-29T19:44+03:00":  722,
+                                                 "2026-09-29T19:45+03:00":  486,
+                                                 "2026-09-29T19:46+03:00":  870,
+                                                 "2026-09-29T19:47+03:00":  549,
+                                                 "2026-09-29T19:48+03:00":  353,
+                                                 "2026-09-29T19:49+03:00":  3,
+                                                 "2026-09-29T19:57+03:00":  905,
+                                                 "2026-09-29T19:58+03:00":  595,
+                                                 "2026-09-29T19:59+03:00":  212,
+                                                 "2026-09-29T20:00+03:00":  1102,
+                                                 "2026-09-29T20:01+03:00":  600,
+                                                 "2026-09-29T20:02+03:00":  601,
+                                                 "2026-09-29T20:03+03:00":  599,
+                                                 "2026-09-29T20:04+03:00":  601,
+                                                 "2026-09-29T20:05+03:00":  599,
+                                                 "2026-09-29T20:06+03:00":  600,
+                                                 "2026-09-29T20:07+03:00":  24,
+                                                 "2026-09-29T20:17+03:00":  2,
+                                                 "2026-09-29T20:18+03:00":  5,
+                                                 "2026-09-29T20:20+03:00":  3,
+                                                 "2026-09-29T20:21+03:00":  2,
+                                                 "2026-09-29T20:29+03:00":  1,
+                                                 "2026-09-29T20:40+03:00":  1,
+                                                 "2026-09-29T21:11+03:00":  518,
+                                                 "2026-09-29T21:12+03:00":  671,
+                                                 "2026-09-29T21:13+03:00":  439
+                                             },
+                     "unique_nonempty_request_ids":  16512,
+                     "unique_nonempty_cmd_request_ids":  16507,
+                     "unique_nonempty_cmd_id_prefixes_before_slash":  16313,
+                     "missing_request_ids":  0,
+                     "missing_cmd_request_ids":  0,
+                     "forwarded_client_instances":  {
+                                                        "214f80310d1b0378c5ee1f92e78d875e":  18,
+                                                        "2598230f1e9beb7bef25d0f48f807dd7":  5340,
+                                                        "38d4685427aa485ea720facdb217f008":  7,
+                                                        "57933a0142ca3f8198a3a5c9737a03c4":  5,
+                                                        "5a559c137423d4d1d2a5c5a35cec5d5a":  2,
+                                                        "5aaccf9d08940b4c8ed90f1f2fe8b845":  11,
+                                                        "63c2405fe3b79f5313a810d50c2f1c96":  2,
+                                                        "aca11fc8d447bace1aa03ed911071775":  9,
+                                                        "af61c86604b4a9c57d5b9e72091cb6b3":  3,
+                                                        "b7c6348094d86eb956e949c382e72ec8":  3,
+                                                        "ca2c7100bcab71597d64cd70c1fed34b":  11075,
+                                                        "cf7c1cf07076a7e9fd89ea93cd7b75a9":  20,
+                                                        "e0ed36349073dccff4814ae05c203e94":  10,
+                                                        "e1b93251109d4572ae291377bcf60118":  7
+                                                    },
+                     "forwarded_rpc_ids_json_encoded":  {
+                                                            "\"openai-mcp-discover\"":  2,
+                                                            "0":  16508,
+                                                            "1":  1,
+                                                            "2":  1
+                                                        },
+                     "forwarded_methods":  {
+
+                                           },
+                     "forwarded_tool_names":  {
+
+                                              },
+                     "forwarded_missing_method":  16512,
+                     "forwarded_missing_tool_name":  16512,
+                     "first_three_forwarded_identifiers":  [
+                                                               {
+                                                                   "line":  35,
+                                                                   "time":  "2026-09-29T16:57:28.1177503+03:00",
+                                                                   "request_id":  "cmd_bf710eff_d7b5_4b96_a2ab_60a8e63b0e57",
+                                                                   "cmd_request_id":  "4072d1b5-937b-4143-9095-a277da0a56ad/d32f"
+                                                               },
+                                                               {
+                                                                   "line":  40,
+                                                                   "time":  "2026-09-29T16:57:38.1227071+03:00",
+                                                                   "request_id":  "cmd_d5df1f16_dfb4_4291_87d8_fed551705869",
+                                                                   "cmd_request_id":  "e9530862-49c8-4aa2-91dc-272171aff4ea/ssh6"
+                                                               },
+                                                               {
+                                                                   "line":  45,
+                                                                   "time":  "2026-09-29T16:57:39.0206641+03:00",
+                                                                   "request_id":  "cmd_bc09c653_cc27_4a51_b374_e201280613e2",
+                                                                   "cmd_request_id":  "4072d1b5-937b-4143-9095-a277da0a56ad/ej3m"
+                                                               }
+                                                           ],
+                     "interpretation_limit":  "Forwarded lines are post-response-handling log events, not arrival timestamps or proof of successful delivery. Distinct IDs do not establish distinct operations or exclude retries with regenerated IDs. Missing methods cannot be inferred from RPC IDs."
+                 },
+    "windows":  [
+                    {
+                        "source":  "C:\\Users\\FoxOS_User\\.codexify-go\\codexify-go.log",
+                        "sha256":  "b093a2384e7e531898c6b6dc6505a81808245bc17a18501272240301823b3f51",
+                        "from_inclusive":  "2026-09-29T17:42:00+03:00",
+                        "to_exclusive":  "2026-09-29T17:51:00+03:00",
+                        "histogram_utc_offset_minutes":  180,
+                        "file_lines":  83047,
+                        "file_json_objects":  83047,
+                        "file_blank_lines":  0,
+                        "file_invalid_json_lines":  0,
+                        "file_missing_or_invalid_timestamps":  0,
+                        "scoped_records":  26485,
+                        "messages":  {
+                                         "client log level set":  5297,
+                                         "dispatcher forwarded command to MCP server":  5297,
+                                         "server connecting":  5297,
+                                         "server session connected":  5297,
+                                         "server session disconnected":  5297
+                                     },
+                        "field_names":  [
+                                            "client_instance_id",
+                                            "cmd_request_id",
+                                            "component",
+                                            "level",
+                                            "msg",
+                                            "request_id",
+                                            "rpc_request_id",
+                                            "session_id",
+                                            "time",
+                                            "tunnel_id"
+                                        ],
+                        "forwarded_log_records":  5297,
+                        "first_forwarded_log_time":  "2026-09-29T17:42:00.464636+03:00",
+                        "last_forwarded_log_time":  "2026-09-29T17:50:52.2005715+03:00",
+                        "forwarded_by_minute":  {
+                                                    "2026-09-29T17:42+03:00":  1023,
+                                                    "2026-09-29T17:43+03:00":  626,
+                                                    "2026-09-29T17:44+03:00":  600,
+                                                    "2026-09-29T17:45+03:00":  598,
+                                                    "2026-09-29T17:46+03:00":  71,
+                                                    "2026-09-29T17:47+03:00":  978,
+                                                    "2026-09-29T17:48+03:00":  102,
+                                                    "2026-09-29T17:49+03:00":  1032,
+                                                    "2026-09-29T17:50+03:00":  267
+                                                },
+                        "unique_nonempty_request_ids":  5297,
+                        "unique_nonempty_cmd_request_ids":  5297,
+                        "unique_nonempty_cmd_id_prefixes_before_slash":  5285,
+                        "missing_request_ids":  0,
+                        "missing_cmd_request_ids":  0,
+                        "forwarded_client_instances":  {
+                                                           "2598230f1e9beb7bef25d0f48f807dd7":  5297
+                                                       },
+                        "forwarded_rpc_ids_json_encoded":  {
+                                                               "0":  5297
+                                                           },
+                        "forwarded_methods":  {
+
+                                              },
+                        "forwarded_tool_names":  {
+
+                                                 },
+                        "forwarded_missing_method":  5297,
+                        "forwarded_missing_tool_name":  5297,
+                        "first_three_forwarded_identifiers":  [
+                                                                  {
+                                                                      "line":  982,
+                                                                      "time":  "2026-09-29T17:42:00.464636+03:00",
+                                                                      "request_id":  "cmd_a17a4ebf_fae0_4f8d_b4aa_2ea67c879ece",
+                                                                      "cmd_request_id":  "ca5f6958-f028-4139-acaa-9efde5f2f86b/06j3"
+                                                                  },
+                                                                  {
+                                                                      "line":  987,
+                                                                      "time":  "2026-09-29T17:42:06.5767073+03:00",
+                                                                      "request_id":  "cmd_e0612cea_841d_4c4f_b698_10f39e534c51",
+                                                                      "cmd_request_id":  "ca5f6958-f028-4139-acaa-9efde5f2f86b/9kaf"
+                                                                  },
+                                                                  {
+                                                                      "line":  992,
+                                                                      "time":  "2026-09-29T17:42:09.82979+03:00",
+                                                                      "request_id":  "cmd_48c40449_447d_4e05_a273_ab8e409c10b3",
+                                                                      "cmd_request_id":  "ca5f6958-f028-4139-acaa-9efde5f2f86b/lzs7"
+                                                                  }
+                                                              ],
+                        "interpretation_limit":  "Forwarded lines are post-response-handling log events, not arrival timestamps or proof of successful delivery. Distinct IDs do not establish distinct operations or exclude retries with regenerated IDs. Missing methods cannot be inferred from RPC IDs."
+                    },
+                    {
+                        "source":  "C:\\Users\\FoxOS_User\\.codexify-go\\codexify-go.log",
+                        "sha256":  "b093a2384e7e531898c6b6dc6505a81808245bc17a18501272240301823b3f51",
+                        "from_inclusive":  "2026-09-29T19:44:00+03:00",
+                        "to_exclusive":  "2026-09-29T19:49:00+03:00",
+                        "histogram_utc_offset_minutes":  180,
+                        "file_lines":  83047,
+                        "file_json_objects":  83047,
+                        "file_blank_lines":  0,
+                        "file_invalid_json_lines":  0,
+                        "file_missing_or_invalid_timestamps":  0,
+                        "scoped_records":  14917,
+                        "messages":  {
+                                         "client log level set":  2984,
+                                         "command response deadline reached; dropping without posting a response":  1,
+                                         "dispatcher forwarded command to MCP server":  2980,
+                                         "server connecting":  2984,
+                                         "server session connected":  2984,
+                                         "server session disconnected":  2984
+                                     },
+                        "field_names":  [
+                                            "client_instance_id",
+                                            "cmd_request_id",
+                                            "component",
+                                            "level",
+                                            "msg",
+                                            "request_id",
+                                            "rpc_request_id",
+                                            "session_id",
+                                            "time",
+                                            "tunnel_id"
+                                        ],
+                        "forwarded_log_records":  2980,
+                        "first_forwarded_log_time":  "2026-09-29T19:44:01.5506979+03:00",
+                        "last_forwarded_log_time":  "2026-09-29T19:48:30.5819459+03:00",
+                        "forwarded_by_minute":  {
+                                                    "2026-09-29T19:44+03:00":  722,
+                                                    "2026-09-29T19:45+03:00":  486,
+                                                    "2026-09-29T19:46+03:00":  870,
+                                                    "2026-09-29T19:47+03:00":  549,
+                                                    "2026-09-29T19:48+03:00":  353
+                                                },
+                        "unique_nonempty_request_ids":  2980,
+                        "unique_nonempty_cmd_request_ids":  2980,
+                        "unique_nonempty_cmd_id_prefixes_before_slash":  2975,
+                        "missing_request_ids":  0,
+                        "missing_cmd_request_ids":  0,
+                        "forwarded_client_instances":  {
+                                                           "ca2c7100bcab71597d64cd70c1fed34b":  2980
+                                                       },
+                        "forwarded_rpc_ids_json_encoded":  {
+                                                               "0":  2980
+                                                           },
+                        "forwarded_methods":  {
+
+                                              },
+                        "forwarded_tool_names":  {
+
+                                                 },
+                        "forwarded_missing_method":  2980,
+                        "forwarded_missing_tool_name":  2980,
+                        "first_three_forwarded_identifiers":  [
+                                                                  {
+                                                                      "line":  27719,
+                                                                      "time":  "2026-09-29T19:44:01.5506979+03:00",
+                                                                      "request_id":  "cmd_25d7493f_f599_4618_a737_bcf21308be24",
+                                                                      "cmd_request_id":  "101ef551-e5ce-4979-a53c-b89f99a364a9/7vgm"
+                                                                  },
+                                                                  {
+                                                                      "line":  27728,
+                                                                      "time":  "2026-09-29T19:44:06.0011651+03:00",
+                                                                      "request_id":  "cmd_e533541d_9650_4352_9ca1_10f8785b1842",
+                                                                      "cmd_request_id":  "101ef551-e5ce-4979-a53c-b89f99a364a9/hx6s"
+                                                                  },
+                                                                  {
+                                                                      "line":  27729,
+                                                                      "time":  "2026-09-29T19:44:06.2066926+03:00",
+                                                                      "request_id":  "cmd_019a8471_a956_4d00_9306_fbb9461825b6",
+                                                                      "cmd_request_id":  "85d5e473-d2d1-411c-8820-873e5fd99302/5co0"
+                                                                  }
+                                                              ],
+                        "interpretation_limit":  "Forwarded lines are post-response-handling log events, not arrival timestamps or proof of successful delivery. Distinct IDs do not establish distinct operations or exclude retries with regenerated IDs. Missing methods cannot be inferred from RPC IDs."
+                    },
+                    {
+                        "source":  "C:\\Users\\FoxOS_User\\.codexify-go\\codexify-go.log",
+                        "sha256":  "b093a2384e7e531898c6b6dc6505a81808245bc17a18501272240301823b3f51",
+                        "from_inclusive":  "2026-09-29T19:57:00+03:00",
+                        "to_exclusive":  "2026-09-29T20:08:00+03:00",
+                        "histogram_utc_offset_minutes":  180,
+                        "file_lines":  83047,
+                        "file_json_objects":  83047,
+                        "file_blank_lines":  0,
+                        "file_invalid_json_lines":  0,
+                        "file_missing_or_invalid_timestamps":  0,
+                        "scoped_records":  32200,
+                        "messages":  {
+                                         "client log level set":  6440,
+                                         "command response deadline reached; dropping without posting a response":  2,
+                                         "dispatcher forwarded command to MCP server":  6438,
+                                         "server connecting":  6440,
+                                         "server session connected":  6440,
+                                         "server session disconnected":  6440
+                                     },
+                        "field_names":  [
+                                            "client_instance_id",
+                                            "cmd_request_id",
+                                            "component",
+                                            "level",
+                                            "msg",
+                                            "request_id",
+                                            "rpc_request_id",
+                                            "session_id",
+                                            "time",
+                                            "tunnel_id"
+                                        ],
+                        "forwarded_log_records":  6438,
+                        "first_forwarded_log_time":  "2026-09-29T19:57:18.3143336+03:00",
+                        "last_forwarded_log_time":  "2026-09-29T20:07:40.2639194+03:00",
+                        "forwarded_by_minute":  {
+                                                    "2026-09-29T19:57+03:00":  905,
+                                                    "2026-09-29T19:58+03:00":  595,
+                                                    "2026-09-29T19:59+03:00":  212,
+                                                    "2026-09-29T20:00+03:00":  1102,
+                                                    "2026-09-29T20:01+03:00":  600,
+                                                    "2026-09-29T20:02+03:00":  601,
+                                                    "2026-09-29T20:03+03:00":  599,
+                                                    "2026-09-29T20:04+03:00":  601,
+                                                    "2026-09-29T20:05+03:00":  599,
+                                                    "2026-09-29T20:06+03:00":  600,
+                                                    "2026-09-29T20:07+03:00":  24
+                                                },
+                        "unique_nonempty_request_ids":  6438,
+                        "unique_nonempty_cmd_request_ids":  6438,
+                        "unique_nonempty_cmd_id_prefixes_before_slash":  6418,
+                        "missing_request_ids":  0,
+                        "missing_cmd_request_ids":  0,
+                        "forwarded_client_instances":  {
+                                                           "ca2c7100bcab71597d64cd70c1fed34b":  6438
+                                                       },
+                        "forwarded_rpc_ids_json_encoded":  {
+                                                               "0":  6438
+                                                           },
+                        "forwarded_methods":  {
+
+                                              },
+                        "forwarded_tool_names":  {
+
+                                                 },
+                        "forwarded_missing_method":  6438,
+                        "forwarded_missing_tool_name":  6438,
+                        "first_three_forwarded_identifiers":  [
+                                                                  {
+                                                                      "line":  42671,
+                                                                      "time":  "2026-09-29T19:57:18.3143336+03:00",
+                                                                      "request_id":  "cmd_363bd6ef_d2b9_4586_8c09_54838c916f1a",
+                                                                      "cmd_request_id":  "9261f3df-b411-414b-97ac-cb37fa11fa91/bloe"
+                                                                  },
+                                                                  {
+                                                                      "line":  42672,
+                                                                      "time":  "2026-09-29T19:57:18.3179352+03:00",
+                                                                      "request_id":  "cmd_bf5e21cf_4ae1_4ca0_9c17_cbde0e62c91f",
+                                                                      "cmd_request_id":  "da584607-c46f-4cab-8479-ad5d53e660ee/qa0y"
+                                                                  },
+                                                                  {
+                                                                      "line":  42673,
+                                                                      "time":  "2026-09-29T19:57:18.3475841+03:00",
+                                                                      "request_id":  "cmd_fc0300a3_5820_4312_8464_780e15c95e6b",
+                                                                      "cmd_request_id":  "ddf186e6-93e3-4c2f-9fb8-3effcf41946f/jf8m"
+                                                                  }
+                                                              ],
+                        "interpretation_limit":  "Forwarded lines are post-response-handling log events, not arrival timestamps or proof of successful delivery. Distinct IDs do not establish distinct operations or exclude retries with regenerated IDs. Missing methods cannot be inferred from RPC IDs."
+                    },
+                    {
+                        "source":  "C:\\Users\\FoxOS_User\\.codexify-go\\codexify-go.log",
+                        "sha256":  "b093a2384e7e531898c6b6dc6505a81808245bc17a18501272240301823b3f51",
+                        "from_inclusive":  "2026-09-29T21:11:00+03:00",
+                        "to_exclusive":  "2026-09-29T21:14:00+03:00",
+                        "histogram_utc_offset_minutes":  180,
+                        "file_lines":  83047,
+                        "file_json_objects":  83047,
+                        "file_blank_lines":  0,
+                        "file_invalid_json_lines":  0,
+                        "file_missing_or_invalid_timestamps":  0,
+                        "scoped_records":  8140,
+                        "messages":  {
+                                         "client log level set":  1628,
+                                         "dispatcher forwarded command to MCP server":  1628,
+                                         "server connecting":  1628,
+                                         "server session connected":  1628,
+                                         "server session disconnected":  1628
+                                     },
+                        "field_names":  [
+                                            "client_instance_id",
+                                            "cmd_request_id",
+                                            "component",
+                                            "level",
+                                            "msg",
+                                            "request_id",
+                                            "rpc_request_id",
+                                            "session_id",
+                                            "time",
+                                            "tunnel_id"
+                                        ],
+                        "forwarded_log_records":  1628,
+                        "first_forwarded_log_time":  "2026-09-29T21:11:32.6895841+03:00",
+                        "last_forwarded_log_time":  "2026-09-29T21:13:26.2880027+03:00",
+                        "forwarded_by_minute":  {
+                                                    "2026-09-29T21:11+03:00":  518,
+                                                    "2026-09-29T21:12+03:00":  671,
+                                                    "2026-09-29T21:13+03:00":  439
+                                                },
+                        "unique_nonempty_request_ids":  1628,
+                        "unique_nonempty_cmd_request_ids":  1628,
+                        "unique_nonempty_cmd_id_prefixes_before_slash":  1615,
+                        "missing_request_ids":  0,
+                        "missing_cmd_request_ids":  0,
+                        "forwarded_client_instances":  {
+                                                           "ca2c7100bcab71597d64cd70c1fed34b":  1628
+                                                       },
+                        "forwarded_rpc_ids_json_encoded":  {
+                                                               "0":  1628
+                                                           },
+                        "forwarded_methods":  {
+
+                                              },
+                        "forwarded_tool_names":  {
+
+                                                 },
+                        "forwarded_missing_method":  1628,
+                        "forwarded_missing_tool_name":  1628,
+                        "first_three_forwarded_identifiers":  [
+                                                                  {
+                                                                      "line":  74911,
+                                                                      "time":  "2026-09-29T21:11:32.6895841+03:00",
+                                                                      "request_id":  "cmd_29c9dafc_1fe2_4d5c_a112_74238ad95d5f",
+                                                                      "cmd_request_id":  "f38ed76e-8c27-4872-9551-450f8d3c3393/hbb0"
+                                                                  },
+                                                                  {
+                                                                      "line":  74916,
+                                                                      "time":  "2026-09-29T21:11:38.6752566+03:00",
+                                                                      "request_id":  "cmd_0ff825fe_b87b_4b32_8f91_05f2e5dde98d",
+                                                                      "cmd_request_id":  "f38ed76e-8c27-4872-9551-450f8d3c3393/9umo"
+                                                                  },
+                                                                  {
+                                                                      "line":  74945,
+                                                                      "time":  "2026-09-29T21:11:40.3926417+03:00",
+                                                                      "request_id":  "cmd_360f790f_4eb9_4e90_a80c_0ab8e6d4aff0",
+                                                                      "cmd_request_id":  "70cbb4ab-c4ce-435f-a1e5-d699954d4d0a/edvh"
+                                                                  }
+                                                              ],
+                        "interpretation_limit":  "Forwarded lines are post-response-handling log events, not arrival timestamps or proof of successful delivery. Distinct IDs do not establish distinct operations or exclude retries with regenerated IDs. Missing methods cannot be inferred from RPC IDs."
+                    }
+                ]
+}

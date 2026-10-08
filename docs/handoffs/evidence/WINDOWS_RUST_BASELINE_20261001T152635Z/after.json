@@ -1,0 +1,68 @@
+﻿{
+    "capturedUtc":  "2026-10-01T15:29:00.0041721Z",
+    "windowEndUtc":  "2026-10-01T15:28:59.6847897+00:00",
+    "service":  {
+                    "Name":  "CodexifyGo",
+                    "State":  "Stopped",
+                    "StartMode":  "Disabled",
+                    "ProcessId":  0
+                },
+    "processes":  [
+                      {
+                          "Name":  "codexify.exe",
+                          "ProcessId":  11304,
+                          "ParentProcessId":  5748,
+                          "CreationDate":  "\/Date(1790850137646)\/",
+                          "ExecutablePath":  "C:\\Users\\FoxOS_User\\.codexify\\bin\\codexify.exe"
+                      },
+                      {
+                          "Name":  "codexify.exe",
+                          "ProcessId":  8452,
+                          "ParentProcessId":  11304,
+                          "CreationDate":  "\/Date(1790851120090)\/",
+                          "ExecutablePath":  "C:\\Users\\FoxOS_User\\.codexify\\bin\\codexify.exe"
+                      },
+                      {
+                          "Name":  "tunnel-client-runtime.exe",
+                          "ProcessId":  8468,
+                          "ParentProcessId":  8452,
+                          "CreationDate":  "\/Date(1790851120757)\/",
+                          "ExecutablePath":  "C:\\Users\\FoxOS_User\\.codexify\\openai-tunnel\\v0.0.12\\tunnel-client-runtime.exe"
+                      }
+                  ],
+    "listener":  [
+                     {
+                         "LocalAddress":  "127.0.0.1",
+                         "LocalPort":  3000,
+                         "OwningProcess":  8452
+                     }
+                 ],
+    "toolEventsInWindow":  16,
+    "sourceHead":  "1098803bb3861e3f5d1a2702e4f5fda42afe0546",
+    "sourceStatus":  [
+                         " M config.example.json",
+                         " M docs/handoffs/RUST_TO_GO_CUTOVER_HANDOFF.md",
+                         " M internal/app/app.go",
+                         " M internal/config/config.go",
+                         " M internal/mcpserver/server.go",
+                         " M internal/mcpserver/server_test.go",
+                         " M internal/projects/manager.go",
+                         " M internal/projects/projects_test.go",
+                         " M internal/tunnel/runtime.go",
+                         " M internal/ui/resources.go",
+                         " M internal/worker/worker.go",
+                         "?? docs/handoffs/WINDOWS_CUTOVER_REPORT.md",
+                         "?? docs/handoffs/WINDOWS_CUTOVER_V2_ACCEPTANCE_20260930.md",
+                         "?? docs/handoffs/WINDOWS_CUTOVER_V2_PREFLIGHT_20260930.md",
+                         "?? docs/handoffs/WINDOWS_MCP_BURST_FIX_AND_DIAGNOSTICS_20260930.md",
+                         "?? docs/handoffs/WINDOWS_MCP_BURST_FORENSICS_20260930.md",
+                         "?? docs/handoffs/evidence/",
+                         "?? internal/config/diagnostics_test.go",
+                         "?? internal/logging/",
+                         "?? internal/mcpdiag/",
+                         "?? internal/mcpserver/diagnostics_test.go",
+                         "?? internal/ui/resources_test.go",
+                         "?? internal/ui/widget_runtime_test.mjs",
+                         "?? tools/"
+                     ]
+}

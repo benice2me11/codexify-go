@@ -5,13 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"os/user"
 	"path/filepath"
 	"strings"
 
 	"github.com/benice2me11/codexify-go/internal/config"
+	"github.com/benice2me11/codexify-go/internal/logging"
 	"github.com/benice2me11/codexify-go/internal/mcpserver"
 )
 
@@ -29,7 +29,7 @@ func Run(ctx context.Context, cfg config.Config, console bool) error {
 	if console {
 		out = io.MultiWriter(os.Stderr, logFile)
 	}
-	logger := slog.New(slog.NewJSONHandler(out, nil))
+	logger := logging.NewJSON(out, cfg.Log.Level)
 
 	token := ""
 	if cfg.MCP.AuthEnabled {

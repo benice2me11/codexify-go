@@ -1,0 +1,20 @@
+﻿[
+    {
+        "line":  13,
+        "time":  "2026-10-01T13:38:40.7796983+03:00",
+        "message":  "mcp session initialized",
+        "availableFields":  [
+                                "time",
+                                "level",
+                                "msg",
+                                "client_instance_id",
+                                "tunnel_id",
+                                "component",
+                                "protocol_version",
+                                "server_name",
+                                "server_version"
+                            ],
+        "protocolVersion":  "2025-06-18",
+        "clientInstanceId":  "45b47550e78a6608855a19e143837775"
+    }
+]

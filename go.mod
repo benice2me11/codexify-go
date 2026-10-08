@@ -4,7 +4,7 @@ go 1.26.5
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.2
-	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/pelletier/go-toml/v2 v2.2.4
 	golang.org/x/mod v0.29.0
 	golang.org/x/sys v0.48.0

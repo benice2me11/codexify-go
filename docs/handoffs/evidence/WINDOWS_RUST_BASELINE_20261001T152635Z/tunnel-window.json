@@ -1,0 +1,152 @@
+﻿[
+    {
+        "line":  931,
+        "timestampUtc":  "2026-10-01T15:26:50.0562987+00:00",
+        "level":  "INFO",
+        "message":  "dispatcher forwarded command to MCP server",
+        "clientInstanceId":  "45b47550e78a6608855a19e143837775",
+        "requestId":  "cmd_bb72372d_689b_4fa5_91b5_cc000c3c066b",
+        "commandRequestId":  "wfr_01a0f812232673bb9f65d582e3cf68ba/tqpi",
+        "rpcRequestId":  0
+    },
+    {
+        "line":  932,
+        "timestampUtc":  "2026-10-01T15:26:58.4293665+00:00",
+        "level":  "INFO",
+        "message":  "dispatcher forwarded command to MCP server",
+        "clientInstanceId":  "45b47550e78a6608855a19e143837775",
+        "requestId":  "cmd_d6c90f2b_a1a0_4971_9832_c6bbf65afa1c",
+        "commandRequestId":  "wfr_01a0f812232673bb9f65d582e3cf68ba/93c3",
+        "rpcRequestId":  0
+    },
+    {
+        "line":  933,
+        "timestampUtc":  "2026-10-01T15:27:11.4547600+00:00",
+        "level":  "INFO",
+        "message":  "dispatcher forwarded command to MCP server",
+        "clientInstanceId":  "45b47550e78a6608855a19e143837775",
+        "requestId":  "cmd_7a952ade_0dcd_44e8_8b54_68e567c4a9c9",
+        "commandRequestId":  "wfr_01a0f812232673bb9f65d582e3cf68ba/fenz",
+        "rpcRequestId":  0
+    },
+    {
+        "line":  934,
+        "timestampUtc":  "2026-10-01T15:27:16.1882307+00:00",
+        "level":  "INFO",
+        "message":  "dispatcher forwarded command to MCP server",
+        "clientInstanceId":  "45b47550e78a6608855a19e143837775",
+        "requestId":  "cmd_f1946835_2d7b_4592_9840_959c89c42b5a",
+        "commandRequestId":  "wfr_01a0f812232673bb9f65d582e3cf68ba/di5s",
+        "rpcRequestId":  0
+    },
+    {
+        "line":  935,
+        "timestampUtc":  "2026-10-01T15:27:23.9532001+00:00",
+        "level":  "INFO",
+        "message":  "dispatcher forwarded command to MCP server",
+        "clientInstanceId":  "45b47550e78a6608855a19e143837775",
+        "requestId":  "cmd_6f792fa8_40df_4036_86f6_8893b09cea05",
+        "commandRequestId":  "wfr_01a0f812232673bb9f65d582e3cf68ba/gfxc",
+        "rpcRequestId":  0
+    },
+    {
+        "line":  936,
+        "timestampUtc":  "2026-10-01T15:27:31.8283670+00:00",
+        "level":  "INFO",
+        "message":  "dispatcher forwarded command to MCP server",
+        "clientInstanceId":  "45b47550e78a6608855a19e143837775",
+        "requestId":  "cmd_defccfbd_b31a_48ef_9ad8_d051a2440047",
+        "commandRequestId":  "wfr_01a0f812232673bb9f65d582e3cf68ba/iz4b",
+        "rpcRequestId":  0
+    },
+    {
+        "line":  937,
+        "timestampUtc":  "2026-10-01T15:27:37.6431454+00:00",
+        "level":  "INFO",
+        "message":  "dispatcher forwarded command to MCP server",
+        "clientInstanceId":  "45b47550e78a6608855a19e143837775",
+        "requestId":  "cmd_03b82aa6_81d0_470a_a6da_51afebee3e85",
+        "commandRequestId":  "wfr_01a0f812232673bb9f65d582e3cf68ba/43bv",
+        "rpcRequestId":  0
+    },
+    {
+        "line":  938,
+        "timestampUtc":  "2026-10-01T15:27:48.6831323+00:00",
+        "level":  "INFO",
+        "message":  "dispatcher forwarded command to MCP server",
+        "clientInstanceId":  "45b47550e78a6608855a19e143837775",
+        "requestId":  "cmd_afacd7eb_7780_4db2_ab79_b2f883048fe2",
+        "commandRequestId":  "wfr_01a0f812232673bb9f65d582e3cf68ba/mr4z",
+        "rpcRequestId":  0
+    },
+    {
+        "line":  939,
+        "timestampUtc":  "2026-10-01T15:27:56.7543332+00:00",
+        "level":  "INFO",
+        "message":  "dispatcher forwarded command to MCP server",
+        "clientInstanceId":  "45b47550e78a6608855a19e143837775",
+        "requestId":  "cmd_f0a4755f_353a_4ce7_a774_a9a4da1bc293",
+        "commandRequestId":  "wfr_01a0f812232673bb9f65d582e3cf68ba/w4yi",
+        "rpcRequestId":  0
+    },
+    {
+        "line":  940,
+        "timestampUtc":  "2026-10-01T15:27:59.1398743+00:00",
+        "level":  "INFO",
+        "message":  "dispatcher forwarded command to MCP server",
+        "clientInstanceId":  "45b47550e78a6608855a19e143837775",
+        "requestId":  "cmd_719b45d1_486a_42fa_9d8b_838aab607968",
+        "commandRequestId":  "wfr_01a0f812232673bb9f65d582e3cf68ba/s0id",
+        "rpcRequestId":  0
+    },
+    {
+        "line":  941,
+        "timestampUtc":  "2026-10-01T15:28:01.6328627+00:00",
+        "level":  "INFO",
+        "message":  "dispatcher forwarded command to MCP server",
+        "clientInstanceId":  "45b47550e78a6608855a19e143837775",
+        "requestId":  "cmd_d4924667_4586_4c23_b497_3d5f1775ccf1",
+        "commandRequestId":  "wfr_01a0f812232673bb9f65d582e3cf68ba/fpma",
+        "rpcRequestId":  0
+    },
+    {
+        "line":  942,
+        "timestampUtc":  "2026-10-01T15:28:07.6301011+00:00",
+        "level":  "INFO",
+        "message":  "dispatcher forwarded command to MCP server",
+        "clientInstanceId":  "45b47550e78a6608855a19e143837775",
+        "requestId":  "cmd_b3e86b38_b5cf_49d8_b3a0_01024395f80a",
+        "commandRequestId":  "wfr_01a0f812232673bb9f65d582e3cf68ba/zxbs",
+        "rpcRequestId":  0
+    },
+    {
+        "line":  943,
+        "timestampUtc":  "2026-10-01T15:28:12.8274513+00:00",
+        "level":  "INFO",
+        "message":  "dispatcher forwarded command to MCP server",
+        "clientInstanceId":  "45b47550e78a6608855a19e143837775",
+        "requestId":  "cmd_c14ca9b5_9356_48f6_ba21_6db8f3982664",
+        "commandRequestId":  "wfr_01a0f812232673bb9f65d582e3cf68ba/taq8",
+        "rpcRequestId":  0
+    },
+    {
+        "line":  944,
+        "timestampUtc":  "2026-10-01T15:28:15.4729188+00:00",
+        "level":  "INFO",
+        "message":  "dispatcher forwarded command to MCP server",
+        "clientInstanceId":  "45b47550e78a6608855a19e143837775",
+        "requestId":  "cmd_6bd3fe81_b8e3_499b_819a_61479847bad3",
+        "commandRequestId":  "wfr_01a0f812232673bb9f65d582e3cf68ba/xyxy",
+        "rpcRequestId":  0
+    },
+    {
+        "line":  945,
+        "timestampUtc":  "2026-10-01T15:28:22.6472826+00:00",
+        "level":  "INFO",
+        "message":  "dispatcher forwarded command to MCP server",
+        "clientInstanceId":  "45b47550e78a6608855a19e143837775",
+        "requestId":  "cmd_00d02d03_72b8_48b9_8102_b0ce695451d3",
+        "commandRequestId":  "wfr_01a0f812232673bb9f65d582e3cf68ba/r80z",
+        "rpcRequestId":  0
+    }
+]

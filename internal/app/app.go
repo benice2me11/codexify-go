@@ -9,10 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 
 	"github.com/benice2me11/codexify-go/internal/config"
 	"github.com/benice2me11/codexify-go/internal/health"
+	"github.com/benice2me11/codexify-go/internal/logging"
 	"github.com/benice2me11/codexify-go/internal/mcpserver"
 	"github.com/benice2me11/codexify-go/internal/supervisor"
 	"github.com/benice2me11/codexify-go/internal/tunnel"
@@ -34,18 +34,7 @@ func Run(ctx context.Context, cfg config.Config, configPath string, console bool
 		out = io.MultiWriter(os.Stderr, logFile)
 	}
 
-	level := new(slog.LevelVar)
-	switch strings.ToLower(cfg.Log.Level) {
-	case "debug":
-		level.Set(slog.LevelDebug)
-	case "warn", "warning":
-		level.Set(slog.LevelWarn)
-	case "error":
-		level.Set(slog.LevelError)
-	default:
-		level.Set(slog.LevelInfo)
-	}
-	logger := slog.New(slog.NewJSONHandler(out, &slog.HandlerOptions{Level: level}))
+	logger := logging.NewJSON(out, cfg.Log.Level)
 
 	logger.Info("codexify-go starting",
 		"service", cfg.Service.Name,

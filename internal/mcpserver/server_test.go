@@ -781,3 +781,39 @@ func runTestGit(t *testing.T, dir string, args ...string) {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
 }
+
+func TestCurrentProtocolRequestsUseEphemeralSessions(t *testing.T) {
+	r := testRuntime(t, false)
+	httpServer := httptest.NewServer(r.Handler())
+	defer httpServer.Close()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "lifecycle-test", Version: "1"}, nil)
+	session, err := client.Connect(context.Background(), &mcp.StreamableClientTransport{
+		Endpoint:             httpServer.URL + "/mcp",
+		DisableStandaloneSSE: true,
+		MaxRetries:           -1,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	if got := session.InitializeResult().ProtocolVersion; got != "2026-07-28" {
+		t.Fatalf("negotiated protocol version = %q, want 2026-07-28", got)
+	}
+
+	// The current protocol is routed to the SDK's stateless handler. That handler
+	// creates a temporary ServerSession for each HTTP request and closes it before
+	// returning, so the server must have no retained transport session between calls.
+	for i := 0; i < 5; i++ {
+		if _, err := session.ListTools(context.Background(), nil); err != nil {
+			t.Fatalf("ListTools #%d: %v", i+1, err)
+		}
+		count := 0
+		for range r.server.Sessions() {
+			count++
+		}
+		if count != 0 {
+			t.Fatalf("after ListTools #%d retained server sessions = %d, want 0 for current stateless path", i+1, count)
+		}
+	}
+}

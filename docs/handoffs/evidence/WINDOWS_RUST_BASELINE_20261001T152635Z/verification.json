@@ -1,0 +1,13 @@
+﻿{
+    "verifiedAtUtc":  "2026-10-01T15:34:34.3339308Z",
+    "status":  "PASS",
+    "sequence":  "905-919, five repetitions of list_projects/read_file/exec_command",
+    "successfulCalls":  15,
+    "forwardedRecords":  15,
+    "peakForwardedRecordsPerSecond":  1,
+    "runtimePidsAndCreationTimesUnchanged":  true,
+    "goService":  "Stopped/Disabled/PID0",
+    "jsonFilesParsed":  9,
+    "reportBytes":  9098,
+    "reportSha256":  "456F3A3F6109CC9BF11238EDAC7D1796867078AE16C8ABDEE5C272BF6EDCF529"
+}

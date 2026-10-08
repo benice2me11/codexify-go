@@ -1,0 +1,76 @@
+﻿{
+    "runId":  "WINDOWS_RUST_BASELINE_20261001T152635Z",
+    "capturedUtc":  "2026-10-01T15:26:35.6866054Z",
+    "purpose":  "Rust read-only workload baseline; runtime and task settings unchanged",
+    "otherClientsPaused":  false,
+    "sourceHead":  "1098803bb3861e3f5d1a2702e4f5fda42afe0546",
+    "sourceStatus":  [
+                         " M config.example.json",
+                         " M docs/handoffs/RUST_TO_GO_CUTOVER_HANDOFF.md",
+                         " M internal/app/app.go",
+                         " M internal/config/config.go",
+                         " M internal/mcpserver/server.go",
+                         " M internal/mcpserver/server_test.go",
+                         " M internal/projects/manager.go",
+                         " M internal/projects/projects_test.go",
+                         " M internal/tunnel/runtime.go",
+                         " M internal/ui/resources.go",
+                         " M internal/worker/worker.go",
+                         "?? docs/handoffs/WINDOWS_CUTOVER_REPORT.md",
+                         "?? docs/handoffs/WINDOWS_CUTOVER_V2_ACCEPTANCE_20260930.md",
+                         "?? docs/handoffs/WINDOWS_CUTOVER_V2_PREFLIGHT_20260930.md",
+                         "?? docs/handoffs/WINDOWS_MCP_BURST_FIX_AND_DIAGNOSTICS_20260930.md",
+                         "?? docs/handoffs/WINDOWS_MCP_BURST_FORENSICS_20260930.md",
+                         "?? docs/handoffs/evidence/",
+                         "?? internal/config/diagnostics_test.go",
+                         "?? internal/logging/",
+                         "?? internal/mcpdiag/",
+                         "?? internal/mcpserver/diagnostics_test.go",
+                         "?? internal/ui/resources_test.go",
+                         "?? internal/ui/widget_runtime_test.mjs",
+                         "?? tools/"
+                     ],
+    "service":  {
+                    "Name":  "CodexifyGo",
+                    "State":  "Stopped",
+                    "StartMode":  "Disabled",
+                    "ProcessId":  0
+                },
+    "processes":  [
+                      {
+                          "Name":  "codexify.exe",
+                          "ProcessId":  11304,
+                          "ParentProcessId":  5748,
+                          "CreationDate":  "\/Date(1790850137646)\/",
+                          "ExecutablePath":  "C:\\Users\\FoxOS_User\\.codexify\\bin\\codexify.exe"
+                      },
+                      {
+                          "Name":  "codexify.exe",
+                          "ProcessId":  8452,
+                          "ParentProcessId":  11304,
+                          "CreationDate":  "\/Date(1790851120090)\/",
+                          "ExecutablePath":  "C:\\Users\\FoxOS_User\\.codexify\\bin\\codexify.exe"
+                      },
+                      {
+                          "Name":  "tunnel-client-runtime.exe",
+                          "ProcessId":  8468,
+                          "ParentProcessId":  8452,
+                          "CreationDate":  "\/Date(1790851120757)\/",
+                          "ExecutablePath":  "C:\\Users\\FoxOS_User\\.codexify\\openai-tunnel\\v0.0.12\\tunnel-client-runtime.exe"
+                      }
+                  ],
+    "rustBinarySha256":  "66227C6CE9326D331CC3A7A31E76B1C1A21A29F64019777ED5DA214B4EAB4CA9",
+    "goBinarySha256":  "E5D786D20D9F0F2771925E4BDC13B5B15F01CC5DCE29E20CF0BA529E6DF2E4E5",
+    "tunnelBinarySha256":  "9CB700F21CA31B05A2C255204123F95B34384C7186972314FE7D62667F27B4DE",
+    "goHistoricalLogSha256":  "B093A2384E7E531898C6B6DC6505A81808245BC17A18501272240301823B3F51",
+    "mainLog":  "C:\\Users\\FoxOS_User\\.codexify\\logs\\codexify.log",
+    "tunnelLog":  "C:\\Users\\FoxOS_User\\AppData\\Local\\Temp\\codexify-openai-tunnel-lcwoSU\\tunnel.log",
+    "tunnelLogBytes":  354246,
+    "plannedCycles":  5,
+    "plannedOperationsPerCycle":  [
+                                      "list_projects",
+                                      "read_file README.md lines 1-12",
+                                      "exec_command git status --porcelain=v1"
+                                  ],
+    "windowStartUtc":  "2026-10-01T15:26:35.8918482Z"
+}

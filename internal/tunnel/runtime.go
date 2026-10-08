@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	ClientVersion      = "0.0.12"
-	releaseBase        = "https://github.com/openai/tunnel-client/releases/download/v0.0.12"
+	ClientVersion      = "0.0.15"
+	releaseBase        = "https://github.com/openai/tunnel-client/releases/download/v0.0.15"
 	maxDownloadBytes   = 100 * 1024 * 1024
 	maxBinaryBytes     = 64 * 1024 * 1024
 	installManifestVer = 1
@@ -318,17 +318,17 @@ func currentReleaseAsset() (releaseAsset, error) {
 	var hash string
 	switch osName + "/" + arch {
 	case "darwin/amd64":
-		hash = "ca05df2ab5397065fcf4b1e2e8ec330d9ad0d7a880a1f08265b36fc69eddd391"
+		hash = "2d3a2b3a985ad2fcfddc4a82a0caa6624ee9383e7d85e82563bf1fe3ce905794"
 	case "darwin/arm64":
-		hash = "924c7a1e0a2ea2c10f4f72b9c2e2382e7d55443831cdf8d84e394a54e83ccc30"
+		hash = "e416ea9ea13e1b8be0d0a355fbd28143cfa55fe5a32b2986fce1a516d7b5e2ad"
 	case "linux/amd64":
-		hash = "31e9ece3f54f87126813fb206d465fd86b23462cc71734a787927b818f60d931"
+		hash = "f26f8b3ee6c335e38fa5cfbe6ce5635f53738f08a26eecf07d6cebacab4a1abf"
 	case "linux/arm64":
-		hash = "f02bc770367e328f21614841eb27393d7f023256224a6dde31c8aa4d6dc763f5"
+		hash = "a868d295385b22449341fa141b911f3e991583e45b1fa2a5bfb946aed1861b88"
 	case "windows/amd64":
-		hash = "0721098f9edda72cc36f938adcb12cd6a0c49c6c0be7ad6ab6e412f966585f2e"
+		hash = "aa5ddb14dddd602fa59f3e6f4401aa8a79a218e341466226b7434127dff65dbc"
 	case "windows/arm64":
-		hash = "952a30d469df749c88722e70441e72c541aa9ad878ab082678533f64bd31b2a9"
+		hash = "3c610dd27760987b11285670b35faa36fec8460e68d64a4cdda4342ce6b8e8be"
 	default:
 		return releaseAsset{}, fmt.Errorf("no pinned tunnel runtime for %s/%s", runtime.GOOS, runtime.GOARCH)
 	}

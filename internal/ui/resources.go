@@ -3,10 +3,10 @@ package ui
 import "github.com/modelcontextprotocol/go-sdk/mcp"
 
 const (
-	SetupURI  = "ui://codexify-go/setup/v1/mcp-app.html"
+	SetupURI  = "ui://codexify-go/setup/v2/mcp-app.html"
 	DiffURI   = "ui://codexify-go/diff/v1/mcp-app.html"
-	ChatURI   = "ui://codexify-go/markdown-chat/v1/mcp-app.html"
-	UpdateURI = "ui://codexify-go/self-update/v1/mcp-app.html"
+	ChatURI   = "ui://codexify-go/markdown-chat/v2/mcp-app.html"
+	UpdateURI = "ui://codexify-go/self-update/v2/mcp-app.html"
 	MIMEType  = "text/html;profile=mcp-app"
 )
 
@@ -100,30 +100,51 @@ const SetupHTML = `<!doctype html>
 const statusEl=document.getElementById("status"),projectsEl=document.getElementById("projects"),errorEl=document.getElementById("error"),switchBtn=document.getElementById("switch");
 function structured(r){return r&&((r.structuredContent)||(r.structured_content)||(r.result&&r.result.structuredContent))||null}
 async function call(name,args={}){if(!(window.openai&&window.openai.callTool))throw new Error("Tool calls are unavailable in this host");return window.openai.callTool(name,args)}
-async function refresh(){
-  errorEl.textContent="";projectsEl.textContent="";
-  try{
-    const sr=await call("setup_status",{}),s=structured(sr)||{};
+let busy=false;
+function renderStatus(s){
     const w=s.workspace||null;
     statusEl.innerHTML=w?("Selected: <code>"+escapeHTML(w.projectRoot||w.workspaceRoot||"")+"</code>"+(w.managedWorktree?" (worktree)":"")):(s.awaitingSelection?"Choose a workspace.":"No workspace selected.");
     switchBtn.hidden=!w;
     switchBtn.dataset.path=w&&w.projectRoot||"";
-    const lr=await call("list_projects",{limit:40}),list=structured(lr)||{};
+}
+function renderProjects(list){
+    projectsEl.textContent="";
     for(const p of list.projects||[]){
       const div=document.createElement("div");div.className="project";
       const label=document.createElement("span");label.innerHTML="<b>"+escapeHTML(p.name||p.selector)+"</b><br><span class=muted>"+escapeHTML(p.selector)+"</span>";
-      const b=document.createElement("button");b.textContent="Select";b.onclick=()=>selectProject(p.selector);
+      const b=document.createElement("button");b.textContent="Select";b.disabled=busy;b.onclick=()=>selectProject(p.selector);
       div.append(label,b);projectsEl.append(div);
     }
-  }catch(e){errorEl.textContent=String(e)}
 }
-async function selectProject(path){try{await call("set_project_root",{path});await refresh()}catch(e){errorEl.textContent=String(e)}}
+function renderPayload(value){
+  const p=structured(value)||value;
+  if(!p||typeof p!=="object")return;
+  if(Object.hasOwn(p,"workspace")||Object.hasOwn(p,"awaitingSelection"))renderStatus(p);
+  if(Array.isArray(p.projects))renderProjects(p);
+}
+// Host globals are state notifications, never an instruction to call tools.
+function renderHost(event){
+  const globals=event&&event.detail&&event.detail.globals;
+  if(globals&&!Object.hasOwn(globals,"toolOutput"))return;
+  renderPayload(globals?globals.toolOutput:window.openai&&window.openai.toolOutput);
+}
+async function run(action){
+  if(busy)return;
+  busy=true;errorEl.textContent="";
+  for(const button of document.querySelectorAll("button"))button.disabled=true;
+  try{await action()}catch(e){errorEl.textContent=String(e)}finally{
+    busy=false;for(const button of document.querySelectorAll("button"))button.disabled=false;
+  }
+}
+async function load(){renderStatus(structured(await call("setup_status",{}))||{});renderProjects(structured(await call("list_projects",{limit:40}))||{})}
+function refresh(){return run(load)}
+function selectProject(path){return run(async()=>{await call("set_project_root",{path});await load()})}
 document.getElementById("refresh").onclick=refresh;
-document.getElementById("scratch").onclick=async()=>{try{await call("set_project_root",{withoutProject:true});await refresh()}catch(e){errorEl.textContent=String(e)}};
-switchBtn.onclick=async()=>{try{await call("setup_ui_switch_project",{expectedPath:switchBtn.dataset.path||""});await refresh()}catch(e){errorEl.textContent=String(e)}};
+document.getElementById("scratch").onclick=()=>run(async()=>{await call("set_project_root",{withoutProject:true});await load()});
+switchBtn.onclick=()=>run(async()=>{await call("setup_ui_switch_project",{expectedPath:switchBtn.dataset.path||""});await load()});
 function escapeHTML(v){return String(v||"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
-window.addEventListener("openai:set_globals",()=>refresh());
-refresh();
+window.addEventListener("openai:set_globals",renderHost);
+renderHost();refresh();
 </script>
 </body>
 </html>`
@@ -157,9 +178,13 @@ const ChatHTML = `<!doctype html>
 const messages=document.getElementById("messages"),message=document.getElementById("message"),status=document.getElementById("status"),error=document.getElementById("error");
 function structured(r){return r&&((r.structuredContent)||(r.structured_content)||(r.result&&r.result.structuredContent))||{}}
 async function call(name,args={}){if(!(window.openai&&window.openai.callTool))throw new Error("Tool calls are unavailable in this host");return window.openai.callTool(name,args)}
-async function refresh(){error.textContent="";try{const r=structured(await call("chat_read",{}));messages.textContent=r.user_text||r.userText||"No unread user text.";status.textContent=r.state||""}catch(e){error.textContent=String(e)}}
-document.getElementById("refresh").onclick=refresh;document.getElementById("send").onclick=async()=>{const value=message.value.trim();if(!value)return;error.textContent="";try{await call("chat_write",{message:value});message.value="";status.textContent="Sent"}catch(e){error.textContent=String(e)}};
-window.addEventListener("openai:set_globals",refresh);refresh();
+let busy=false;
+function renderPayload(value){const r=(value&&(value.structuredContent||value.structured_content))||value;if(!r||typeof r!=="object")return;if(Object.hasOwn(r,"user_text")||Object.hasOwn(r,"userText"))messages.textContent=r.user_text||r.userText||"No unread user text.";if(Object.hasOwn(r,"state"))status.textContent=r.state||""}
+function renderHost(event){const g=event&&event.detail&&event.detail.globals;if(g&&!Object.hasOwn(g,"toolOutput"))return;renderPayload(g?g.toolOutput:window.openai&&window.openai.toolOutput)}
+async function run(action){if(busy)return;busy=true;error.textContent="";document.getElementById("refresh").disabled=true;document.getElementById("send").disabled=true;try{await action()}catch(e){error.textContent=String(e)}finally{busy=false;document.getElementById("refresh").disabled=false;document.getElementById("send").disabled=false}}
+function refresh(){return run(async()=>renderPayload(structured(await call("chat_read",{}))))}
+document.getElementById("refresh").onclick=refresh;document.getElementById("send").onclick=()=>run(async()=>{const value=message.value.trim();if(!value)return;await call("chat_write",{message:value});if(message.value.trim()===value)message.value="";status.textContent="Sent"});
+window.addEventListener("openai:set_globals",renderHost);renderHost();refresh();
 </script></body></html>`
 
 const UpdateHTML = `<!doctype html>
@@ -168,5 +193,9 @@ const UpdateHTML = `<!doctype html>
 <body><div class="card"><div class="row"><strong>Codexify Go update</strong><button id="check">Check again</button></div><p id="status" class="muted">Checking…</p><p id="detail"></p><p class="muted">Installation is intentionally explicit. When an update is available, run <code>codexify-go update apply --config &lt;config&gt;</code> on the host.</p><div id="error"></div></div>
 <script>
 const status=document.getElementById("status"),detail=document.getElementById("detail"),error=document.getElementById("error");function structured(r){return r&&((r.structuredContent)||(r.structured_content)||(r.result&&r.result.structuredContent))||{}}async function call(name,args={}){if(!(window.openai&&window.openai.callTool))throw new Error("Tool calls are unavailable in this host");return window.openai.callTool(name,args)}
-async function check(force=false){error.textContent="";try{const p=structured(await call("self_update_status",{force}));status.textContent=(p.status||"unknown")+" — current "+(p.currentVersion||"?")+(p.latestVersion?", latest "+p.latestVersion:"");detail.textContent=p.detail||""}catch(e){error.textContent=String(e)}}document.getElementById("check").onclick=()=>check(true);window.addEventListener("openai:set_globals",()=>check(false));check(false);
+let busy=false;
+function renderPayload(value){const p=(value&&(value.structuredContent||value.structured_content))||value;if(!p||typeof p!=="object"||!Object.hasOwn(p,"currentVersion"))return;status.textContent=(p.status||"unknown")+" — current "+(p.currentVersion||"?")+(p.latestVersion?", latest "+p.latestVersion:"");detail.textContent=p.detail||""}
+function renderHost(event){const g=event&&event.detail&&event.detail.globals;if(g&&!Object.hasOwn(g,"toolOutput"))return;renderPayload(g?g.toolOutput:window.openai&&window.openai.toolOutput)}
+async function check(force=false){if(busy)return;busy=true;document.getElementById("check").disabled=true;error.textContent="";try{renderPayload(structured(await call("self_update_status",{force})))}catch(e){error.textContent=String(e)}finally{busy=false;document.getElementById("check").disabled=false}}
+document.getElementById("check").onclick=()=>check(true);window.addEventListener("openai:set_globals",renderHost);renderHost();check(false);
 </script></body></html>`

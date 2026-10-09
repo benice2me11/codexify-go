@@ -6,7 +6,7 @@ Candidate branch: `codex/linux-setup-parity-20261009`, based on
 `codex/windows-cutover-g03`. No production binary, systemd service, tunnel,
 Rust fallback, or existing local worktree was modified by creating this branch.
 
-**Status: LINUX UNIT/REGRESSION VERIFIED; NOT DEPLOYED OR LIVE-ACCEPTED.**
+**Status: DEPLOYED AND REMOTE-MCP VERIFIED ON LINUX; SETUP CARD HOST-UI ACCEPTANCE PENDING.**
 The candidate was fetched via the verified `upstream` remote into the isolated
 Linux worktree `.codexify-go/worktrees/linux-setup-parity-test-20261009` at
 commit `b37ec0e` (branch `codex/linux-setup-parity-test-20261009`). Evidence
@@ -58,6 +58,61 @@ The **live** connector/card, systemd service restart, binary swap, host UI
 flicker and independent-conversation isolation have NOT been acceptance-tested.
 Linux MCP intermittently returned `RATE_LIMITED`; do not treat that as a unit
 regression or as evidence of hosted UI success.
+
+
+## Controlled deployment on Linux (2026-10-09)
+
+The user authorized installation with backup and automatic rollback. The
+controlled installation completed on the running Linux host:
+
+- Original Go binary SHA256:
+  `a7f88e89d96d1c96dc6a528cc2681cb0aa1a0e6e3de62c349fdcfddd0991f0ce`
+- Installed candidate SHA256:
+  `ab004c3cab72fc1122db7ef580be09487e2b7fd7d4219abfdffe700d6b45a4bf`
+- Candidate VCS revision:
+  `b37ec0ed7716bfb70b33b7407f4470ec2e2ec6f6`
+- Effective service unit:
+  `codexify-go-codexifygocutover-b55c318650a9.service`
+- Current installed binary:
+  `/home/whtvr/.codexify-go-cutover/codexify-go`
+- Private rollback directory (owner-only):
+  `/home/whtvr/.codexify-go-cutover/deployments/linux-setup-parity-20261009-b37ec0e`
+- Protected backups contain the previous binary, unchanged config.json and
+  original systemd unit, with SHA-256 manifest. The current config and unit
+  compare byte-for-byte with the saved originals.
+
+The independent systemd user rollback timer was armed **before** switching
+the binary. A transient installation service atomically replaced the installed
+binary and restarted only this Go unit. Its log shows:
+
+```text
+2026-10-09 22:56:58 MSK DEPLOY_STARTED
+2026-10-09 22:56:58 MSK CANDIDATE_BINARY_INSTALLED
+2026-10-09 22:57:07 MSK LOCAL_HEALTH_OK pid=51228 tunnel-child=1 http=200
+2026-10-09 22:57:07 MSK DEPLOY_DONE_AWAITING_REMOTE_CONFIRMATION
+```
+
+Live ChatGPT Linux MCP calls **after** the restart succeeded:
+`get_environment`, `list_projects`, `git_status`, and `exec_command`.
+The project binding remained `/home/whtvr/codexify-go` and the source
+checkout remained clean. The new service ran with PID 51228, its owned
+`tunnel-client-r` child was present, local `/health` was HTTP 200, and
+systemd reported `NRestarts=0`.
+
+The host-confirmation marker contains the exact installed candidate hash.
+The rollback guard was manually exercised in confirmation mode at
+2026-10-09 23:01:07 MSK: `CONFIRMED_HEALTHY; no rollback`.
+The independent timer re-checks at its deadline and restores the previous
+binary/restarts the unit if the candidate is not confirmed healthy.
+The old binary has *not* been deleted.
+
+**Not yet accepted:** The new model-visible `setup` tool was not present in
+the already cached tool catalog of this ChatGPT conversation. Refresh/reconnect
+the Linux connector and test the actual Setup v5 card, `Switch project`, and
+`mikrotik` selection. The synthetic widget test alone does not establish
+that flicker or `[object Object]` is eliminated in the real UI.
+Intermittent MCP `RATE_LIMITED` messages were seen both before and after the
+upgrade and remain a separate issue.
 
 ## Observed discrepancy
 

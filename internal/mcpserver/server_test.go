@@ -408,6 +408,10 @@ func TestUIResourcesAndToolMetadata(t *testing.T) {
 	if err != nil || len(legacy.Contents) != 1 || legacy.Contents[0].Text != ui.SetupHTML {
 		t.Fatalf("cached setup v2 descriptor cannot read the current widget: %v", err)
 	}
+	legacyLinux, err := session.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: "ui://codexify-go/setup/v1/mcp-app.html"})
+	if err != nil || len(legacyLinux.Contents) != 1 || legacyLinux.Contents[0].Text != ui.SetupHTML {
+		t.Fatalf("cached Linux setup v1 descriptor cannot read the current widget: %v", err)
+	}
 	diff, err := session.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: ui.DiffURI})
 	if err != nil {
 		t.Fatal(err)

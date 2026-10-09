@@ -878,6 +878,7 @@ func (r *Runtime) registerUIResources() {
 		html        string
 	}{
 		{ui.SetupURI, "codexify-go-setup", "Codexify Go workspace setup", "Workspace selection and status app.", ui.SetupHTML},
+		{"ui://codexify-go/setup/v1/mcp-app.html", "codexify-go-setup-v1", "Codexify Go workspace setup", "Compatible workspace card for cached Linux tool descriptors.", ui.SetupHTML},
 		{"ui://codexify-go/setup/v2/mcp-app.html", "codexify-go-setup-v2", "Codexify Go workspace setup", "Compatible workspace card for cached tool descriptors.", ui.SetupHTML},
 		{ui.DiffURI, "codexify-go-diff", "Codexify Go diff", "Compact working-tree diff viewer.", ui.DiffHTML},
 		{ui.ChatURI, "codexify-go-markdown-chat", "Codexify Go Markdown chat", "Conversation-specific CHAT.md reader and composer.", ui.ChatHTML},

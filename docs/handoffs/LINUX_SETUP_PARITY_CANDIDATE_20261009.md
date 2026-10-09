@@ -23,6 +23,14 @@ returned by the Linux tool in this chat:
   candidate identifies itself as `0.8.2-dev`, SHA256
   `baf8daa4f2541bd394120c32ec6a582e210bceaac0b0b9709998ac42bf9d96fa`.
 
+The candidate ELF was moved from the worktree's untracked `out/` directory to
+`/home/whtvr/codexify-go/.codexify-go/candidates/linux-setup-parity-20261009/codexify-go`.
+The test worktree is clean. The installed production binary remains
+`/home/whtvr/.codexify-go-cutover/codexify-go` (SHA256
+`a7f88e89d96d1c96dc6a528cc2681cb0aa1a0e6e3de62c349fdcfddd0991f0ce`)
+with MCP Go SDK v1.7.0; the candidate embeds SDK v1.8.0. The live Go unit was
+observed active at PID 3944 with `NRestarts=0` after this verification.
+
 The **live** connector/card, systemd service restart, binary swap, host UI
 flicker and independent-conversation isolation have NOT been acceptance-tested.
 Linux MCP intermittently returned `RATE_LIMITED`; do not treat that as a unit

@@ -47,28 +47,30 @@ import (
 const InternalAuthEnv = "CODEXIFY_GO_INTERNAL_MCP_AUTHORIZATION"
 
 type Runtime struct {
-	cfg         config.Config
-	root        *workspace.Root
-	projects    *projects.Manager
-	bridge      *upstream.Bridge
-	memory      *memory.Store
-	skills      *skills.Reader
-	artifacts   *artifacts.Store
-	schema      *connectorschema.Store
-	schemaVer   string
-	diff        *diffmgr.Manager
-	diffKey     string
-	ingress     *ingress.Downloader
-	chat        *markdownchat.Store
-	tickets     *agenttickets.Manager
-	exec        *execsession.Manager
-	server      *mcp.Server
-	http        *http.Server
-	listener    net.Listener
-	token       string
-	log         *slog.Logger
-	diagnostics *mcpdiag.Recorder
-	sessions    sync.Map
+	cfg           config.Config
+	root          *workspace.Root
+	projects      *projects.Manager
+	bridge        *upstream.Bridge
+	memory        *memory.Store
+	skills        *skills.Reader
+	artifacts     *artifacts.Store
+	schema        *connectorschema.Store
+	schemaVer     string
+	diff          *diffmgr.Manager
+	diffKey       string
+	ingress       *ingress.Downloader
+	chat          *markdownchat.Store
+	tickets       *agenttickets.Manager
+	exec          *execsession.Manager
+	server        *mcp.Server
+	http          *http.Server
+	listener      net.Listener
+	token         string
+	log           *slog.Logger
+	diagnostics   *mcpdiag.Recorder
+	sessions      sync.Map
+	setupContexts setupContextStore
+	setupRequests sync.Map
 }
 
 func New(cfg config.Config, logger *slog.Logger) (*Runtime, error) {
@@ -163,6 +165,7 @@ func NewWithToken(cfg config.Config, logger *slog.Logger, token string) (*Runtim
 	if r.tickets != nil {
 		r.server.AddReceivingMiddleware(r.ticketMiddleware())
 	}
+	r.server.AddReceivingMiddleware(r.setupContextMiddleware())
 	r.registerUIResources()
 	r.registerTools()
 	if r.artifacts.Enabled() {
@@ -482,15 +485,40 @@ func (r *Runtime) registerTools() {
 
 	mcp.AddTool(r.server, &mcp.Tool{
 		Meta:        ui.SetupToolMeta(),
-		Name:        "list_projects",
-		Description: "List selectable projects below the configured access root before binding this ChatGPT conversation.",
-	}, func(_ context.Context, _ *mcp.CallToolRequest, in ListProjectsInput) (*mcp.CallToolResult, projects.ListOutput, error) {
-		out, err := r.projects.List(in.Query, in.Limit)
-		return nil, out, err
+		Name:        "setup",
+		Title:       "Open Codexify setup",
+		Description: "Call setup once to open workspace selection and this conversation's Markdown chat. No setup reference is required on this server. When the intended project is unclear or the user only says hello, leave the picker open and wait; do not select scratch by default. chat_await can wait for a selection without any workspace. After selection call get_agent_brief. Connector version marker: " + r.schemaVer + "; copy it into connectorVersion unchanged.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in SetupInput) (*mcp.CallToolResult, SetupStatusOutput, error) {
+		res, out, err := r.setupStatus(ctx, req, SetupStatusInput{UIContext: in.UIContext, ConversationVersion: in.ConnectorVersion})
+		if err == nil && out.Workspace == nil && out.AwaitingSelection {
+			if listing, lerr := r.projects.List("", 40); lerr == nil {
+				out.Projects = &listing
+			}
+		}
+		return res, out, err
 	})
 
 	mcp.AddTool(r.server, &mcp.Tool{
-		Meta:        ui.SetupToolMeta(),
+		Meta:        ui.AppCallableToolMeta(),
+		Name:        "list_projects",
+		Description: "List selectable projects below the configured access root before binding this ChatGPT conversation.",
+	}, func(_ context.Context, req *mcp.CallToolRequest, in ListProjectsInput) (*mcp.CallToolResult, projects.ListOutput, error) {
+		out, err := r.projects.List(in.Query, in.Limit)
+		if err != nil {
+			return nil, out, err
+		}
+		status, err := r.projects.Status(r.requestMeta(req))
+		if err != nil {
+			return nil, out, err
+		}
+		out.Workspace = status.Workspace
+		out.Selected = status.Selected
+		out.AwaitingSelection = status.AwaitingSelection
+		return nil, out, nil
+	})
+
+	mcp.AddTool(r.server, &mcp.Tool{
+		Meta:        ui.AppCallableToolMeta(),
 		Name:        "set_project_root",
 		Description: "Bind this ChatGPT conversation to a local project selector or supported HTTPS/SSH Git repository URL, explicitly choose scratch with withoutProject=true, or resume a previously saved exact workspace with resumePath. Switching an existing binding requires setup_ui_switch_project first.",
 	}, func(_ context.Context, req *mcp.CallToolRequest, in SetProjectRootInput) (*mcp.CallToolResult, projects.WorkspaceInfo, error) {
@@ -538,43 +566,7 @@ func (r *Runtime) registerTools() {
 		Name:        "setup_status",
 		Description: "Read current workspace-selection status for the setup app without modifying project state.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in SetupStatusInput) (*mcp.CallToolResult, SetupStatusOutput, error) {
-		started := time.Now()
-		status, err := r.projects.Status(r.requestMeta(req))
-		if err != nil {
-			return nil, SetupStatusOutput{}, err
-		}
-		conversationVersion := strings.TrimSpace(in.ConversationVersion)
-		if len(conversationVersion) > 64 {
-			return nil, SetupStatusOutput{}, errors.New("conversationVersion must be at most 64 bytes")
-		}
-		identity := projects.IdentityFromMeta(r.requestMeta(req))
-		if identity != nil && identity.Persistent {
-			if conversationVersion != "" {
-				if err := r.schema.RememberConversationVersion(identity.Key, conversationVersion); err != nil {
-					r.log.Warn("could not persist conversation connector version", "error", err)
-				}
-			} else {
-				conversationVersion = r.schema.ConversationVersion(identity.Key)
-			}
-		}
-		reloadedVersion := r.schema.ConnectorVersion()
-		connectorInfo := connectorSchemaInfo(r.schemaVer, reloadedVersion, conversationVersion)
-		update := selfupdate.Inspect(ctx, buildinfo.Version, in.ForceUpdateCheck)
-		return nil, SetupStatusOutput{
-			Version:             buildinfo.Version,
-			ConnectorVersion:    r.schemaVer,
-			ConversationVersion: conversationVersion,
-			ConversationStale:   conversationVersion != "" && conversationVersion != r.schemaVer,
-			ConnectorSchema:     connectorInfo,
-			Update:              update,
-			UpdateCheckMS:       time.Since(started).Milliseconds(),
-			MultiProject:        status.MultiProject,
-			AccessRoot:          status.AccessRoot,
-			WorktreeMode:        status.WorktreeMode,
-			Selected:            status.Selected,
-			AwaitingSelection:   status.AwaitingSelection,
-			Workspace:           status.Workspace,
-		}, nil
+		return r.setupStatus(ctx, req, in)
 	})
 
 	mcp.AddTool(r.server, &mcp.Tool{
@@ -886,6 +878,8 @@ func (r *Runtime) registerUIResources() {
 		html        string
 	}{
 		{ui.SetupURI, "codexify-go-setup", "Codexify Go workspace setup", "Workspace selection and status app.", ui.SetupHTML},
+		{"ui://codexify-go/setup/v1/mcp-app.html", "codexify-go-setup-v1", "Codexify Go workspace setup", "Compatible workspace card for cached Linux tool descriptors.", ui.SetupHTML},
+		{"ui://codexify-go/setup/v2/mcp-app.html", "codexify-go-setup-v2", "Codexify Go workspace setup", "Compatible workspace card for cached tool descriptors.", ui.SetupHTML},
 		{ui.DiffURI, "codexify-go-diff", "Codexify Go diff", "Compact working-tree diff viewer.", ui.DiffHTML},
 		{ui.ChatURI, "codexify-go-markdown-chat", "Codexify Go Markdown chat", "Conversation-specific CHAT.md reader and composer.", ui.ChatHTML},
 		{ui.UpdateURI, "codexify-go-self-update", "Codexify Go update status", "Read-only release/update status app.", ui.UpdateHTML},
@@ -925,11 +919,13 @@ type SelfUpdateStatusInput struct {
 }
 
 type ListProjectsInput struct {
-	Query string `json:"query,omitempty" jsonschema:"optional case-insensitive filter over project name, selector, and description"`
-	Limit int    `json:"limit,omitempty" jsonschema:"maximum projects to return, default 50 and maximum 200"`
+	UIContext string `json:"uiContext,omitempty" jsonschema:"opaque context supplied by the workspace card; omit for model calls"`
+	Query     string `json:"query,omitempty" jsonschema:"optional case-insensitive filter over project name, selector, and description"`
+	Limit     int    `json:"limit,omitempty" jsonschema:"maximum projects to return, default 50 and maximum 200"`
 }
 
 type SetProjectRootInput struct {
+	UIContext      string `json:"uiContext,omitempty" jsonschema:"opaque context supplied by the workspace card; omit for model calls"`
 	Path           string `json:"path,omitempty" jsonschema:"project selector relative to the access root, or a supported HTTPS/SSH Git repository URL; GitHub HTTPS branch, pull-request, and full commit URLs are supported"`
 	WithoutProject bool   `json:"withoutProject,omitempty" jsonschema:"set true only for an explicit scratch/no-project request"`
 	CreateWorktree *bool  `json:"createWorktree,omitempty" jsonschema:"explicitly force or disable managed-worktree creation; omit to follow configured worktree mode"`
@@ -937,6 +933,7 @@ type SetProjectRootInput struct {
 }
 
 type SwitchProjectInput struct {
+	UIContext    string `json:"uiContext,omitempty" jsonschema:"opaque context supplied by the workspace card"`
 	ExpectedPath string `json:"expectedPath,omitempty" jsonschema:"optional active workspace path from the UI/card; rejects the switch if the workspace changed meanwhile"`
 }
 
@@ -964,9 +961,16 @@ type SetupStatusOutput struct {
 	Selected            bool                    `json:"selected"`
 	AwaitingSelection   bool                    `json:"awaitingSelection"`
 	Workspace           *projects.WorkspaceInfo `json:"workspace,omitempty"`
+	Projects            *projects.ListOutput    `json:"projects,omitempty"`
+}
+
+type SetupInput struct {
+	UIContext        string `json:"uiContext,omitempty" jsonschema:"opaque context supplied by the workspace card"`
+	ConnectorVersion string `json:"connectorVersion,omitempty" jsonschema:"connector version marker currently held by the conversation/UI"`
 }
 
 type SetupStatusInput struct {
+	UIContext           string `json:"uiContext,omitempty" jsonschema:"opaque context supplied by the workspace card"`
 	ForceUpdateCheck    bool   `json:"forceUpdateCheck,omitempty" jsonschema:"bypass the short release-check cache and query the latest GitHub release now"`
 	ConversationVersion string `json:"conversationVersion,omitempty" jsonschema:"connector version marker currently held by the conversation/UI"`
 }
@@ -1041,6 +1045,46 @@ type ShowDiffOutput struct {
 	Files              []diffmgr.File  `json:"files"`
 	FilesOmitted       int             `json:"filesOmitted"`
 	Warnings           []string        `json:"warnings"`
+}
+
+func (r *Runtime) setupStatus(ctx context.Context, req *mcp.CallToolRequest, in SetupStatusInput) (*mcp.CallToolResult, SetupStatusOutput, error) {
+	started := time.Now()
+	status, err := r.projects.Status(r.requestMeta(req))
+	if err != nil {
+		return nil, SetupStatusOutput{}, err
+	}
+	conversationVersion := strings.TrimSpace(in.ConversationVersion)
+	if len(conversationVersion) > 64 {
+		return nil, SetupStatusOutput{}, errors.New("conversationVersion must be at most 64 bytes")
+	}
+	identity := projects.IdentityFromMeta(r.requestMeta(req))
+	if identity != nil && identity.Persistent {
+		if conversationVersion != "" {
+			if err := r.schema.RememberConversationVersion(identity.Key, conversationVersion); err != nil {
+				r.log.Warn("could not persist conversation connector version", "error", err)
+			}
+		} else {
+			conversationVersion = r.schema.ConversationVersion(identity.Key)
+		}
+	}
+	reloadedVersion := r.schema.ConnectorVersion()
+	connectorInfo := connectorSchemaInfo(r.schemaVer, reloadedVersion, conversationVersion)
+	update := selfupdate.Inspect(ctx, buildinfo.Version, in.ForceUpdateCheck)
+	return nil, SetupStatusOutput{
+		Version:             buildinfo.Version,
+		ConnectorVersion:    r.schemaVer,
+		ConversationVersion: conversationVersion,
+		ConversationStale:   conversationVersion != "" && conversationVersion != r.schemaVer,
+		ConnectorSchema:     connectorInfo,
+		Update:              update,
+		UpdateCheckMS:       time.Since(started).Milliseconds(),
+		MultiProject:        status.MultiProject,
+		AccessRoot:          status.AccessRoot,
+		WorktreeMode:        status.WorktreeMode,
+		Selected:            status.Selected,
+		AwaitingSelection:   status.AwaitingSelection,
+		Workspace:           status.Workspace,
+	}, nil
 }
 
 type ExecCommandInput struct {
@@ -1167,6 +1211,9 @@ func (r *Runtime) gitFor(req *mcp.CallToolRequest) (*agenttools.Git, error) {
 }
 
 func (r *Runtime) requestMeta(req *mcp.CallToolRequest) map[string]any {
+	if verified, ok := r.setupRequests.Load(req); ok {
+		return verified.(map[string]any)
+	}
 	var meta map[string]any
 	if req != nil && req.Params != nil && req.Params.Meta != nil {
 		meta = req.Params.Meta

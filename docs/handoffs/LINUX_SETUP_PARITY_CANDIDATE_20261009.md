@@ -31,6 +31,15 @@ The test worktree is clean. The installed production binary remains
 with MCP Go SDK v1.7.0; the candidate embeds SDK v1.8.0. The live Go unit was
 observed active at PID 3944 with `NRestarts=0` after this verification.
 
+**Build provenance follow-up:** `go version -m` for the built candidate
+reported an embedded module pseudo-version ending in `10e437e04998`, although
+the test worktree's Git HEAD was `b37ec0e`. This can reflect Go's module/VCS
+metadata handling, but the precise cause has not been verified. Before any
+service swap, run `go env GOMOD GOWORK`, `go list -m -f '{{.Dir}} {{.Version}}'`,
+`go list -f '{{.Dir}}' ./cmd/codexify-go` inside the candidate worktree and
+inspect `go version -m`/`vcs.revision`. Confirm all source paths/identities
+match the candidate. Do not claim deployment readiness before resolving this.
+
 The **live** connector/card, systemd service restart, binary swap, host UI
 flicker and independent-conversation isolation have NOT been acceptance-tested.
 Linux MCP intermittently returned `RATE_LIMITED`; do not treat that as a unit

@@ -6,10 +6,27 @@ Candidate branch: `codex/linux-setup-parity-20261009`, based on
 `codex/windows-cutover-g03`. No production binary, systemd service, tunnel,
 Rust fallback, or existing local worktree was modified by creating this branch.
 
-**Status: SOURCE CANDIDATE, NOT DEPLOYED OR LIVE-ACCEPTED.**
-As of this handoff, only source-level comparison and static presence checks
-have run. Linux MCP command calls were returning `RATE_LIMITED`. Do not treat
-a successful GitHub edit as a successful local build or hosted UI test.
+**Status: LINUX UNIT/REGRESSION VERIFIED; NOT DEPLOYED OR LIVE-ACCEPTED.**
+The candidate was fetched via the verified `upstream` remote into the isolated
+Linux worktree `.codexify-go/worktrees/linux-setup-parity-test-20261009` at
+commit `b37ec0e` (branch `codex/linux-setup-parity-test-20261009`). Evidence
+returned by the Linux tool in this chat:
+
+- `node internal/ui/widget_runtime_test.mjs --source internal/ui/resources.go`: PASS.
+  SetupHTML had zero automatic initial calls, host notifications caused zero
+  new calls, and setup context/error test cases passed.
+- `go test -count=1 ./internal/mcpserver ./internal/ui ./internal/projects`: PASS.
+- `go test -count=1 ./...`: PASS across all packages.
+- `go vet ./...`: PASS.
+- `go test -race -count=1 ./internal/mcpserver ./internal/projects ./internal/ui`: PASS.
+- `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath ...`: completed;
+  candidate identifies itself as `0.8.2-dev`, SHA256
+  `baf8daa4f2541bd394120c32ec6a582e210bceaac0b0b9709998ac42bf9d96fa`.
+
+The **live** connector/card, systemd service restart, binary swap, host UI
+flicker and independent-conversation isolation have NOT been acceptance-tested.
+Linux MCP intermittently returned `RATE_LIMITED`; do not treat that as a unit
+regression or as evidence of hosted UI success.
 
 ## Observed discrepancy
 

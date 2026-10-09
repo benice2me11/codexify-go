@@ -60,6 +60,7 @@ function host(html, options = {}) {
     try {
       await tick();
       if (options.fail) throw new Error('fixture failure');
+      if (Object.hasOwn(options, 'failObject')) throw options.failObject;
       if (options.toolError?.name === name) return {isError:true,content:options.toolError.content};
       let data;
       switch (name) {
@@ -150,6 +151,15 @@ for (const [name,html] of Object.entries(pages)) {
     await settle();
     assert.equal(failed.calls.length,count,'error response initiated retries');
     assert.ok(failed.elements.get('error').textContent.includes('fixture failure'));
+    if(name==='SetupHTML') {
+      const objectFailure=host(html,{failObject:{code:'MCP_BRIDGE_ERROR',message:'Linux setup call rejected'}});
+      await settle();
+      await objectFailure.click('refresh');await settle();
+      const displayed=objectFailure.elements.get('error').textContent;
+      assert.ok(displayed.includes('Linux setup call rejected'),'object error message lost');
+      assert.ok(!displayed.includes('[object Object]'),'raw Object error leaked to UI');
+      assert.equal(objectFailure.calls.length,1,'object error caused a request loop');
+    }
     const sync=host(html,{feedback:'sync'});
     await settle();
     assert.equal(sync.calls.length,expectedInitial[name],'synchronous feedback loop');

@@ -13,6 +13,7 @@ a successful GitHub edit as a successful local build or hosted UI test.
 
 ## Observed discrepancy
 
+- On the actual Linux checkout, `origin` is `git@github.com:1AAk/codexify-go.git` and `upstream` is `https://github.com/benice2me11/codexify-go.git`; this candidate must be fetched from `upstream`, not `origin`.
 - The earlier Linux checkout uses Setup resource `v1`, while the GitHub
   `main` resource is `v2` and the Windows cutover is `v5`.
 - Linux source checkout `main` was observed at `10e437e`, 21 commits
@@ -53,12 +54,12 @@ cd /home/whtvr/codexify-go
 git status --short --branch
 git worktree list --porcelain
 git check-ignore -v .codexify-go/worktrees
-git fetch --no-tags origin \
-  +refs/heads/codex/linux-setup-parity-20261009:refs/remotes/origin/codex/linux-setup-parity-20261009
+git fetch --no-tags upstream \
+  +refs/heads/codex/linux-setup-parity-20261009:refs/remotes/upstream/codex/linux-setup-parity-20261009
 # Only when path and branch are available and safely isolated:
 git worktree add -b codex/linux-setup-parity-test \
   .codexify-go/worktrees/linux-setup-parity-test \
-  refs/remotes/origin/codex/linux-setup-parity-20261009
+  refs/remotes/upstream/codex/linux-setup-parity-20261009
 cd .codexify-go/worktrees/linux-setup-parity-test
 go version
 node --version

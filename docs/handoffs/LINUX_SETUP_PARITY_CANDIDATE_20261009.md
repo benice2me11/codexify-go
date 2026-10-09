@@ -21,9 +21,9 @@ returned by the Linux tool in this chat:
 - `go test -race -count=1 ./internal/mcpserver ./internal/projects ./internal/ui`: PASS.
 - `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath ...`: completed;
   candidate identifies itself as `0.8.2-dev`, SHA256
-  `baf8daa4f2541bd394120c32ec6a582e210bceaac0b0b9709998ac42bf9d96fa`.
+  canonical, VCS-verified candidate SHA256 `ab004c3cab72fc1122db7ef580be09487e2b7fd7d4219abfdffe700d6b45a4bf`.
 
-The candidate ELF was moved from the worktree's untracked `out/` directory to
+The candidate ELF was staged outside the worktree at
 `/home/whtvr/codexify-go/.codexify-go/candidates/linux-setup-parity-20261009/codexify-go`.
 The test worktree is clean. The installed production binary remains
 `/home/whtvr/.codexify-go-cutover/codexify-go` (SHA256
@@ -31,14 +31,28 @@ The test worktree is clean. The installed production binary remains
 with MCP Go SDK v1.7.0; the candidate embeds SDK v1.8.0. The live Go unit was
 observed active at PID 3944 with `NRestarts=0` after this verification.
 
-**Build provenance follow-up:** `go version -m` for the built candidate
-reported an embedded module pseudo-version ending in `10e437e04998`, although
-the test worktree's Git HEAD was `b37ec0e`. This can reflect Go's module/VCS
-metadata handling, but the precise cause has not been verified. Before any
-service swap, run `go env GOMOD GOWORK`, `go list -m -f '{{.Dir}} {{.Version}}'`,
-`go list -f '{{.Dir}}' ./cmd/codexify-go` inside the candidate worktree and
-inspect `go version -m`/`vcs.revision`. Confirm all source paths/identities
-match the candidate. Do not claim deployment readiness before resolving this.
+**Build provenance resolved:** An ordinary Go build from the nested Linux
+Git worktree unexpectedly stamped the *outer source checkout* revision
+`10e437e...`, despite `go env GOMOD`, `go list -m` and the main package's
+source path correctly pointing into the candidate worktree. Rebuilding with
+an explicit, Git-verified candidate worktree context resolved the mismatch:
+
+```bash
+cd /home/whtvr/codexify-go/.codexify-go/worktrees/linux-setup-parity-test-20261009
+GIT_DIR="$(git rev-parse --absolute-git-dir)" GIT_WORK_TREE="$PWD" \
+  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+  go build -buildvcs=true -trimpath -o ../../candidates/linux-setup-parity-20261009/codexify-go-candidate-stamped ./cmd/codexify-go
+```
+
+`go version -m` of that binary confirms `vcs.revision=b37ec0ed7716bfb70b33b7407f4470ec2e2ec6f6`
+with `vcs.modified=false`, SHA256
+`ab004c3cab72fc1122db7ef580be09487e2b7fd7d4219abfdffe700d6b45a4bf`.
+This correctly stamped candidate was promoted to the staged path ending in
+`/candidates/linux-setup-parity-20261009/codexify-go`; the first artifact
+was retained under `codexify-go-old-vcs-stamp` for forensics. This action did
+NOT touch the running systemd unit or installed binary. The live service
+remained active at PID 3944 with `NRestarts=0`. The real client/widget acceptance
+and controlled service cutover are still required.
 
 The **live** connector/card, systemd service restart, binary swap, host UI
 flicker and independent-conversation isolation have NOT been acceptance-tested.

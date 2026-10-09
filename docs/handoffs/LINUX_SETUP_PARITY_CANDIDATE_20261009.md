@@ -106,6 +106,14 @@ The independent timer re-checks at its deadline and restores the previous
 binary/restarts the unit if the candidate is not confirmed healthy.
 The old binary has *not* been deleted.
 
+Final safety timer result at **2026-10-09 23:01:47 MSK**:
+`ROLLBACK_GUARD_ENTER source=deadline` followed by
+`CONFIRMED_HEALTHY; no rollback`. At 23:02:38 the timer was
+`inactive/dead` with `Result=success` (normal one-shot completion);
+Go remained `active`, PID 51228, `NRestarts=0`, `/health=200`, and
+installed SHA256 `ab004c3...`. The `rolled_back` and guard-error markers
+were absent. The previous binary/config/unit backup remains available.
+
 **Not yet accepted:** The new model-visible `setup` tool was not present in
 the already cached tool catalog of this ChatGPT conversation. Refresh/reconnect
 the Linux connector and test the actual Setup v5 card, `Switch project`, and

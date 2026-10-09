@@ -3,7 +3,7 @@ package ui
 import "github.com/modelcontextprotocol/go-sdk/mcp"
 
 const (
-	SetupURI  = "ui://codexify-go/setup/v2/mcp-app.html"
+	SetupURI  = "ui://codexify-go/setup/v5/mcp-app.html"
 	DiffURI   = "ui://codexify-go/diff/v1/mcp-app.html"
 	ChatURI   = "ui://codexify-go/markdown-chat/v2/mcp-app.html"
 	UpdateURI = "ui://codexify-go/self-update/v2/mcp-app.html"
@@ -18,6 +18,15 @@ func SetupToolMeta() mcp.Meta {
 		},
 		"ui/resourceUri":          SetupURI,
 		"openai/outputTemplate":   SetupURI,
+		"openai/widgetAccessible": true,
+	}
+}
+
+func AppCallableToolMeta() mcp.Meta {
+	return mcp.Meta{
+		"ui": map[string]any{
+			"visibility": []string{"model", "app"},
+		},
 		"openai/widgetAccessible": true,
 	}
 }
@@ -92,20 +101,56 @@ const SetupHTML = `<!doctype html>
 <body>
 <div class="card">
   <div class="row"><strong>Codexify Go</strong><button id="refresh">Refresh</button><button id="scratch">Scratch</button><button id="switch" hidden>Switch project</button></div>
-  <div id="status" class="muted">Loading workspace status...</div>
+  <div id="status" class="muted">No live status loaded. Press Refresh to fetch it.</div>
   <div id="projects"></div>
   <div id="error"></div>
 </div>
 <script>
 const statusEl=document.getElementById("status"),projectsEl=document.getElementById("projects"),errorEl=document.getElementById("error"),switchBtn=document.getElementById("switch");
+let uiContext="",observedHostContext="",hostContextRevision=0;
+function setupContext(value){
+  if(!value||typeof value!=="object")return "";
+  const key="io.github.devnoname120/codexify/setup-context";
+  for(const meta of [value,value._meta,value.call_tool_result&&value.call_tool_result._meta,value.mcp_tool_result&&value.mcp_tool_result._meta]){
+    const token=meta&&meta[key];
+    if(typeof token==="string"&&/^[A-Za-z0-9_-]{43}$/.test(token))return token;
+  }
+  return "";
+}
+function applyHostContext(current){
+  if(current!==uiContext){uiContext=current;hostContextRevision++;}
+}
+function syncHostContext(){
+  const current=setupContext(window.openai&&window.openai.toolResponseMetadata);
+  if(current!==observedHostContext){observedHostContext=current;applyHostContext(current);}
+}
 function structured(r){return r&&((r.structuredContent)||(r.structured_content)||(r.result&&r.result.structuredContent))||null}
-async function call(name,args={}){if(!(window.openai&&window.openai.callTool))throw new Error("Tool calls are unavailable in this host");return window.openai.callTool(name,args)}
-let busy=false;
+async function call(name,args={}){
+  if(!(window.openai&&window.openai.callTool))throw new Error("Tool calls are unavailable in this host");
+  syncHostContext();
+  const revision=hostContextRevision;
+  const result=await window.openai.callTool(name,uiContext?{...args,uiContext}:args);
+  syncHostContext();
+  if(revision!==hostContextRevision)throw new Error("The workspace changed while this request was running. Refresh to continue.");
+  const nextContext=setupContext(result);if(nextContext)uiContext=nextContext;
+  if(result&&result.isError===true){
+    const message=typeof result.content==="string"?result.content:Array.isArray(result.content)?result.content.filter(c=>c&&c.type==="text"&&typeof c.text==="string").map(c=>c.text).join("\n"):"";
+    throw new Error(message.trim()||"The request failed.");
+  }
+  return result;
+}
+let busy=false,bound=false;
+function errorText(e){
+  const v=e&&typeof e==="object"?(e.message||(e.data&&e.data.message)||JSON.stringify(e)):String(e);
+  return String(v||"Unknown error").replace(/\s+/g," ").trim().slice(0,512);
+}
 function renderStatus(s){
     const w=s.workspace||null;
+    bound=!!w;
     statusEl.innerHTML=w?("Selected: <code>"+escapeHTML(w.projectRoot||w.workspaceRoot||"")+"</code>"+(w.managedWorktree?" (worktree)":"")):(s.awaitingSelection?"Choose a workspace.":"No workspace selected.");
     switchBtn.hidden=!w;
     switchBtn.dataset.path=w&&w.projectRoot||"";
+    if(bound)projectsEl.textContent="";
 }
 function renderProjects(list){
     projectsEl.textContent="";
@@ -119,12 +164,16 @@ function renderProjects(list){
 function renderPayload(value){
   const p=structured(value)||value;
   if(!p||typeof p!=="object")return;
-  if(Object.hasOwn(p,"workspace")||Object.hasOwn(p,"awaitingSelection"))renderStatus(p);
-  if(Array.isArray(p.projects))renderProjects(p);
+  if(Object.hasOwn(p,"projectRoot"))renderStatus({workspace:p});
+  else if(Object.hasOwn(p,"workspace")||Object.hasOwn(p,"awaitingSelection")||Object.hasOwn(p,"selected"))renderStatus(p);
+  const pl=p.projects;
+  if(pl&&!bound)renderProjects(Array.isArray(pl)?{projects:pl}:pl);
 }
 // Host globals are state notifications, never an instruction to call tools.
 function renderHost(event){
   const globals=event&&event.detail&&event.detail.globals;
+  if(globals&&Object.hasOwn(globals,"toolResponseMetadata")){observedHostContext=setupContext(window.openai&&window.openai.toolResponseMetadata);applyHostContext(setupContext(globals.toolResponseMetadata));}
+  else syncHostContext();
   if(globals&&!Object.hasOwn(globals,"toolOutput"))return;
   renderPayload(globals?globals.toolOutput:window.openai&&window.openai.toolOutput);
 }
@@ -132,11 +181,11 @@ async function run(action){
   if(busy)return;
   busy=true;errorEl.textContent="";
   for(const button of document.querySelectorAll("button"))button.disabled=true;
-  try{await action()}catch(e){errorEl.textContent=String(e)}finally{
+  try{await action()}catch(e){errorEl.textContent=errorText(e)}finally{
     busy=false;for(const button of document.querySelectorAll("button"))button.disabled=false;
   }
 }
-async function load(){renderStatus(structured(await call("setup_status",{}))||{});renderProjects(structured(await call("list_projects",{limit:40}))||{})}
+async function load(){const s=structured(await call("setup_status",{}))||{};renderStatus(s);if(bound)return;renderProjects(structured(await call("list_projects",{limit:40}))||{})}
 function refresh(){return run(load)}
 function selectProject(path){return run(async()=>{await call("set_project_root",{path});await load()})}
 document.getElementById("refresh").onclick=refresh;
@@ -144,7 +193,7 @@ document.getElementById("scratch").onclick=()=>run(async()=>{await call("set_pro
 switchBtn.onclick=()=>run(async()=>{await call("setup_ui_switch_project",{expectedPath:switchBtn.dataset.path||""});await load()});
 function escapeHTML(v){return String(v||"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
 window.addEventListener("openai:set_globals",renderHost);
-renderHost();refresh();
+renderHost();
 </script>
 </body>
 </html>`

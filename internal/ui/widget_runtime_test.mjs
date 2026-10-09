@@ -52,41 +52,49 @@ function host(html, options = {}) {
     Object.assign(window.openai, globals);
     window.dispatchEvent({type:'openai:set_globals',detail:{globals}});
   }
-  window.openai = {toolOutput:options.initialOutput||null, async callTool(name, params) {
+  let bound=false;
+  window.openai = {toolOutput:options.initialOutput||null, toolResponseMetadata:options.initialMetadata||null, async callTool(name, params) {
     if (calls.length >= 64) { exhausted = true; throw new Error('synthetic call budget exhausted'); }
     calls.push({name, params:JSON.parse(JSON.stringify(params))});
     active++; maxActive=Math.max(maxActive,active);
     try {
       await tick();
       if (options.fail) throw new Error('fixture failure');
+      if (Object.hasOwn(options, 'failObject')) throw options.failObject;
+      if (options.toolError?.name === name) return {isError:true,content:options.toolError.content};
       let data;
       switch (name) {
-        case 'setup_status': data={workspace:{projectRoot:'C:\\fixture'},awaitingSelection:false}; break;
+        case 'setup_status': data=bound?{workspace:{projectRoot:'C:\\fixture'},awaitingSelection:false}:{awaitingSelection:true,workspace:null}; break;
         case 'list_projects': data={projects:[{name:'Fixture',selector:'fixture'}]}; break;
         case 'chat_read': data={user_text:'Fixture unread message',state:'ready'}; break;
         case 'chat_write': data={state:'written'}; break;
         case 'self_update_status': data={status:'up_to_date',currentVersion:'fixture-v1',detail:'fixture status'}; break;
-        case 'set_project_root': data={workspace:{projectRoot:'C:\\fixture'}}; break;
-        case 'setup_ui_switch_project': data={awaitingSelection:true,workspace:null}; break;
+        case 'set_project_root': bound=true; data={workspace:{projectRoot:'C:\\fixture'}}; break;
+        case 'setup_ui_switch_project': bound=false; data={awaitingSelection:true,workspace:null}; break;
         default: throw new Error('unexpected fixture tool '+name);
       }
+      if(options.beforeResult)await options.beforeResult(name,params);
       if (options.feedback !== false) {
         // A host may deliver a state change during a call, or after its promise
         // settles. The asynchronous case makes a mere in-flight flag inadequate.
         if (options.feedback === 'sync') emit({toolOutput:data});
         else setImmediate(() => emit({toolOutput:data}));
       }
-      return {structuredContent:data};
+      const resultMetadata=typeof options.resultMetadata==='function'?options.resultMetadata(name,params):options.resultMetadata;
+      return {structuredContent:data,...(resultMetadata?{_meta:resultMetadata}:{})};
     } finally { active--; }
   }};
   const context = vm.createContext({window,document,console});
   for (const script of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) vm.runInContext(script[1],context,{timeout:1000});
   return {calls,elements,all,emit,get maxActive(){return maxActive},get exhausted(){return exhausted},
+    setHostMetadata(value) { window.openai.toolResponseMetadata=value; },
+    emitEvent(globals) { window.dispatchEvent({type:'openai:set_globals',detail:{globals}}); },
     click(id) { const el=elements.get(id); assert.ok(el&&el.onclick,id); if(!el.disabled) return el.onclick(); },
   };
 }
 
-const expectedInitial = {SetupHTML:2,ChatHTML:1,UpdateHTML:1,DiffHTML:0};
+const expectedInitial = {SetupHTML:0,ChatHTML:1,UpdateHTML:1,DiffHTML:0};
+const callsPerRefresh = {SetupHTML:2,ChatHTML:1,UpdateHTML:1};
 const results = [];
 for (const [name,html] of Object.entries(pages)) {
   const h=host(html);
@@ -110,16 +118,17 @@ for (const [name,html] of Object.entries(pages)) {
     const id=name==='UpdateHTML'?'check':'refresh';
     for(let i=0;i<20;i++) h.click(id);
     await settle();
-    assert.equal(h.calls.length,2*expectedInitial[name],name+' repeated overlapping clicks');
+    assert.equal(h.calls.length,expectedInitial[name]+callsPerRefresh[name],name+' repeated overlapping clicks');
     assert.equal(h.maxActive,1,name+' concurrent widget calls');
     assert.equal(h.elements.get(id).disabled,false,name+' button remained disabled');
     if(name==='SetupHTML') {
+      assert.equal(h.elements.get('projects').children.length,1,'project list did not render');
       const before=h.calls.length;
       for(let i=0;i<20;i++) h.click('scratch');
       await settle();
-      assert.equal(h.calls.length,before+3,'setup mutation should run once then two reads');
+      assert.equal(h.calls.length,before+2,'setup mutation should run once then one bound read');
       assert.equal(h.calls.filter(c=>c.name==='set_project_root').length,1);
-      assert.equal(h.elements.get('projects').children.length,1,'project list did not render');
+      assert.equal(h.elements.get('projects').children.length,0,'bound workspace must hide the picker');
       h.emit({toolOutput:{workspace:{projectRoot:'C:\\passive'},awaitingSelection:false}});
       assert.ok(h.elements.get('status').innerHTML.includes('passive'));
     } else if(name==='ChatHTML') {
@@ -136,15 +145,134 @@ for (const [name,html] of Object.entries(pages)) {
     }
     const failed=host(html,{fail:true});
     await settle();
+    if(name==='SetupHTML'){await failed.click(id);await settle();}
     const count=failed.calls.length;
     for(let i=0;i<20;i++) failed.emit({toolOutput:{unrelated:'error event'}});
     await settle();
     assert.equal(failed.calls.length,count,'error response initiated retries');
     assert.ok(failed.elements.get('error').textContent.includes('fixture failure'));
+    if(name==='SetupHTML') {
+      const objectFailure=host(html,{failObject:{code:'MCP_BRIDGE_ERROR',message:'Linux setup call rejected'}});
+      await settle();
+      await objectFailure.click('refresh');await settle();
+      const displayed=objectFailure.elements.get('error').textContent;
+      assert.ok(displayed.includes('Linux setup call rejected'),'object error message lost');
+      assert.ok(!displayed.includes('[object Object]'),'raw Object error leaked to UI');
+      assert.equal(objectFailure.calls.length,1,'object error caused a request loop');
+    }
     const sync=host(html,{feedback:'sync'});
     await settle();
     assert.equal(sync.calls.length,expectedInitial[name],'synchronous feedback loop');
   }
   results.push({name,initialCalls:expectedInitial[name],callsAfterInteractions:h.calls.length,maxConcurrent:h.maxActive,globalsTriggeredCalls:0});
+}
+if (!baseline) {
+  const contextKey='io.github.devnoname120/codexify/setup-context';
+  const contextA='A'.repeat(43),contextB='B'.repeat(43);
+  const shapes=[
+    {[contextKey]:contextA},
+    {_meta:{[contextKey]:contextA}},
+    {status:'success',call_tool_result:{_meta:{[contextKey]:contextA}}},
+    {status:'success',mcp_tool_result:{_meta:{[contextKey]:contextA}}},
+  ];
+  for(const metadata of shapes){
+    const h=host(pages.SetupHTML,{initialMetadata:metadata});
+    await settle();
+    assert.equal(h.calls.length,0,'mounted card initiated calls instead of rendering host output');
+    await h.click('refresh');await settle();
+    assert.deepEqual(h.calls.map(c=>c.params.uiContext),[contextA,contextA],'initial workspace calls lost hidden context');
+    const before=h.calls.length;
+    h.emit({toolResponseMetadata:{_meta:{[contextKey]:contextB}}});
+    await settle();
+    assert.equal(h.calls.length,before,'metadata update initiated tool calls');
+    await h.click('switch');await settle();
+    assert.deepEqual(h.calls.slice(before).map(c=>c.params.uiContext),[contextB,contextB,contextB],'updated context did not reach switch and its reads');
+    h.emit({toolResponseMetadata:null});
+    const cleared=h.calls.length;
+    await h.click('refresh');await settle();
+    assert.ok(h.calls.slice(cleared).every(c=>!Object.hasOwn(c.params,'uiContext')),'cleared host metadata reused another card context');
+  }
+  const renewed=host(pages.SetupHTML,{initialMetadata:shapes[0],resultMetadata:{[contextKey]:contextB}});
+  await settle();
+  await renewed.click('refresh');await settle();
+  assert.deepEqual(renewed.calls.map(c=>c.params.uiContext),[contextA,contextB],'returned fresh context was not retained');
+  await renewed.click('refresh');await settle();
+  assert.ok(renewed.calls.slice(2).every(c=>c.params.uiContext===contextB),'initial metadata overwrote refreshed context');
+  const delayed=host(pages.SetupHTML);
+  await settle();
+  const initialCount=delayed.calls.length;
+  delayed.emit({toolResponseMetadata:shapes[0]});await settle();
+  assert.equal(delayed.calls.length,initialCount,'delayed metadata initiated tools');
+  await delayed.click('scratch');await settle();
+  assert.ok(delayed.calls.slice(initialCount).every(c=>c.params.uiContext===contextA),'delayed context missing from user action');
+  // The desktop can update the global getter without including metadata in the
+  // following event payload. A button must use the current getter even when no
+  // corresponding event was delivered.
+  for(const notification of ['toolOutput','none']){
+    const late=host(pages.SetupHTML,{feedback:false});
+    await settle();
+    const before=late.calls.length;
+    late.setHostMetadata(shapes[0]);
+    if(notification==='toolOutput')late.emit({toolOutput:{projects:[]}});
+    await settle();
+    assert.equal(late.calls.length,before,'getter metadata update initiated calls');
+    await late.click('refresh');await settle();
+    assert.ok(late.calls.slice(before).every(c=>c.params.uiContext===contextA),'current host getter context was missed: '+notification);
+    const cleared=late.calls.length;
+    late.setHostMetadata(null);
+    await late.click('refresh');await settle();
+    assert.ok(late.calls.slice(cleared).every(c=>!Object.hasOwn(c.params,'uiContext')),'cleared getter context was reused');
+  }
+  for(const replacement of [contextB,null]){
+    for(const notification of ['toolOutput','none']){
+      let release,entered;
+      const pending=new Promise(resolve=>{release=resolve;});
+      const started=new Promise(resolve=>{entered=resolve;});
+      let first=true;
+      const race=host(pages.SetupHTML,{
+        initialMetadata:shapes[0],feedback:false,
+        async beforeResult(){if(first){first=false;entered();await pending;}},
+        resultMetadata:(_name,params)=>params.uiContext?{[contextKey]:params.uiContext}:null,
+      });
+      await settle();
+      const clicked=race.click('refresh');
+      await started;
+      race.setHostMetadata(replacement?{[contextKey]:replacement}:null);
+      if(notification==='toolOutput')race.emit({toolOutput:{projects:[]}});
+      release();await clicked;await settle();
+      assert.equal(race.calls.length,1,'changed workspace continued the old read chain');
+      assert.ok(race.elements.get('error').textContent.includes('workspace changed'),'changed workspace did not stop the stale result');
+      const before=race.calls.length;
+      await race.click('scratch');await settle();
+      assert.ok(race.calls.slice(before).every(c=>replacement?c.params.uiContext===replacement:!Object.hasOwn(c.params,'uiContext')),'late response restored the previous context');
+    }
+  }
+  const eventFirst=host(pages.SetupHTML,{initialMetadata:shapes[0],feedback:false});
+  await settle();
+  for(const replacement of [contextB,null]){
+    const before=eventFirst.calls.length;
+    eventFirst.emitEvent({toolResponseMetadata:replacement?{[contextKey]:replacement}:null});
+    await eventFirst.click('refresh');await settle();
+    assert.ok(eventFirst.calls.slice(before).every(c=>replacement?c.params.uiContext===replacement:!Object.hasOwn(c.params,'uiContext')),'stale getter overrode explicit metadata event');
+  }
+  results.push({name:'SetupConversationContext',metadataShapes:shapes.length,globalsTriggeredCalls:0});
+  const errors = [
+    {content:[{type:'text',text:'Selection rejected: <fixture identity missing>'}],expected:'Selection rejected: <fixture identity missing>'},
+    {content:'Selection rejected by fixture',expected:'Selection rejected by fixture'},
+    {content:[],expected:'The request failed.'},
+  ];
+  for (const fixture of errors) {
+    const h=host(pages.SetupHTML,{feedback:false,toolError:{name:'set_project_root',content:fixture.content},initialOutput:{projects:[{name:'Fixture',selector:'fixture'}]}});
+    await settle();
+    const previousStatus=h.elements.get('status').innerHTML;
+    const before=h.calls.length;
+    await h.elements.get('projects').children[0].children[1].onclick();
+    await settle();
+    assert.ok(h.elements.get('error').textContent.includes(fixture.expected),'Select must display MCP tool errors');
+    assert.deepEqual(h.calls.slice(before).map(c=>c.name),['set_project_root'],'failed selection must not reload or retry');
+    assert.equal(h.elements.get('status').innerHTML,previousStatus,'failed selection changed the displayed workspace');
+    assert.ok(h.all.filter(el=>el.tag==='button').every(el=>!el.disabled),'failed selection left a disabled button');
+  }
+  results.push({name:'SetupToolErrors',cases:errors.length});
 }
 console.log(JSON.stringify({mode:baseline?'bounded-original-reproduction':'regression',host:'synthetic; no hosted MCP calls',results},null,2));

@@ -384,8 +384,11 @@ func TestUIResourcesAndToolMetadata(t *testing.T) {
 	for _, tool := range listed.Tools {
 		metaByName[tool.Name] = tool.Meta
 	}
-	if got := metaByName["list_projects"]["ui/resourceUri"]; got != ui.SetupURI {
-		t.Fatalf("list_projects UI resource = %#v", got)
+	if got := metaByName["setup"]["ui/resourceUri"]; got != ui.SetupURI {
+		t.Fatalf("setup UI resource = %#v", got)
+	}
+	if got, ok := metaByName["list_projects"]["ui/resourceUri"]; ok {
+		t.Fatalf("list_projects must stay app-callable only, UI resource = %#v", got)
 	}
 	if got := metaByName["show_diff"]["ui/resourceUri"]; got != ui.DiffURI {
 		t.Fatalf("show_diff UI resource = %#v", got)
@@ -400,6 +403,14 @@ func TestUIResourcesAndToolMetadata(t *testing.T) {
 	}
 	if len(setup.Contents) != 1 || setup.Contents[0].MIMEType != ui.MIMEType || !strings.Contains(setup.Contents[0].Text, "setup_status") {
 		t.Fatalf("unexpected setup UI resource: %+v", setup.Contents)
+	}
+	legacy, err := session.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: "ui://codexify-go/setup/v2/mcp-app.html"})
+	if err != nil || len(legacy.Contents) != 1 || legacy.Contents[0].Text != ui.SetupHTML {
+		t.Fatalf("cached setup v2 descriptor cannot read the current widget: %v", err)
+	}
+	legacyLinux, err := session.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: "ui://codexify-go/setup/v1/mcp-app.html"})
+	if err != nil || len(legacyLinux.Contents) != 1 || legacyLinux.Contents[0].Text != ui.SetupHTML {
+		t.Fatalf("cached Linux setup v1 descriptor cannot read the current widget: %v", err)
 	}
 	diff, err := session.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: ui.DiffURI})
 	if err != nil {

@@ -119,4 +119,21 @@ function Test-RecoverySnapshot {
     return $manifest
 }
 
-Export-ModuleMember -Function Get-CutoverGuardDecision,Test-RecoverySnapshot
+# A child exit and its replacement are one restart episode, not two.
+# The helper stays in the module so a private time parser is never invoked
+# from Watch-Cutover.ps1 through a non-exported name.
+function Test-CutoverRestartEpisode {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)][DateTimeOffset]$At,
+        [object[]]$RestartTimes = @(),
+        [int]$MergeSeconds = 30
+    )
+
+    if ($MergeSeconds -lt 1) { throw 'MergeSeconds must be >= 1.' }
+    if ($RestartTimes.Count -eq 0) { return $true }
+    $last = ConvertTo-CutoverTime $RestartTimes[$RestartTimes.Count - 1]
+    return ($At - $last).TotalSeconds -gt $MergeSeconds
+}
+
+Export-ModuleMember -Function Get-CutoverGuardDecision,Test-RecoverySnapshot,Test-CutoverRestartEpisode

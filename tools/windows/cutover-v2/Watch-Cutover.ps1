@@ -135,19 +135,41 @@ $started=[DateTimeOffset]::UtcNow
 $restartTimes=New-Object 'System.Collections.Generic.List[object]'
 $lastSignature=''
 $haveBaseline=$false
+$observationFailures=0
+$abortLogPath=if($ObservationPath){Join-Path (Split-Path -Parent $ObservationPath) 'guard-abort.log'}else{Join-Path $env:TEMP 'cutover-guard-abort.log'}
+
+# Preflight: prove the observation write path works before entering the loop.
+# A watcher that cannot record its own decisions must fail loudly at launch,
+# not start armed and abort blind a few seconds in.
+if($ObservationPath) {
+    try {
+        Write-Observation -Decision ([pscustomobject]@{Action='INFO';Reason='guard_started';Count=0}) -At $started -OwnerState ([pscustomobject]@{GoOwners=0;RustOwners=0;Controlled=$false}) -Path $ObservationPath
+    } catch {
+        throw "ObservationPath '$ObservationPath' is not writable at launch: $($_.Exception.Message)"
+    }
+}
 
 while($true) {
     $at=[DateTimeOffset]::UtcNow
     $owners=[pscustomobject]@{GoOwners=0;RustOwners=0;Controlled=$false}
+    $ownerObserved=$false
     try {
         $isSettled=($at -ge $started.AddSeconds($SettlingSeconds))
         $owners=Get-LiveOwnerState -GoExe $candidate -RustExe $RustExecutable -ServiceName $GoServiceName
+        $ownerObserved=$true
         $signature=Get-OwnedSignature -GoExe $candidate
         if(!$haveBaseline) {
             $lastSignature=$signature
             $haveBaseline=$true
         } elseif($isSettled -and $signature -ne $lastSignature -and $lastSignature -ne '' -and $signature -ne '') {
-            $restartTimes.Add($at)
+            # A single supervised child restart produces two signature
+            # transitions (kill removes the PID, respawn adds the new one)
+            # sampled ~2-4s apart. Merge transitions closer than 30s into one
+            # restart episode; genuinely repeated restarts minutes apart still
+            # accumulate toward the abort threshold.
+            if (Test-CutoverRestartEpisode -At $at -RestartTimes $restartTimes.ToArray()) {
+                [void]$restartTimes.Add($at)
+            }
             $lastSignature=$signature
         } else {
             $lastSignature=$signature
@@ -155,13 +177,35 @@ while($true) {
 
         $decision=Get-CutoverGuardDecision -Now $at -DiagnosticEvents @(Read-JsonLines $DiagnosticPath) -TunnelEvents @(Read-JsonLines $TunnelLogPath) -Settled:$isSettled -QuietWindow:$QuietWindow -OwnerState $owners -RestartTimes $restartTimes.ToArray()
         Write-Observation -Decision $decision -At $at -OwnerState $owners -Path $ObservationPath
+        $observationFailures=0
     } catch {
-        $decision=[pscustomobject]@{Action='ABORT';Reason='observation_failed';Count=1}
-        try { Write-Observation -Decision $decision -At $at -OwnerState $owners -Path $ObservationPath }
-        catch { Write-Warning 'Observation could not be written; proceeding with local abort.' }
+        # Observation failure is a guard/tooling fault, not a Go crash.
+        # Do not switch connector owners on missing or malformed telemetry.
+        # Keep retrying, and invalidate G10 until complete observation resumes.
+        $observationFailures++
+        "$($at.ToString('o')) observation_failed#$observationFailures : $($_.Exception.Message)" | Add-Content -LiteralPath $abortLogPath -Encoding UTF8 -ErrorAction SilentlyContinue
+        try { Write-Observation -Decision ([pscustomobject]@{Action='WARN';Reason='observation_failed';Count=$observationFailures}) -At $at -OwnerState $owners -Path $ObservationPath } catch { }
+        if ($ownerObserved -and (!$owners.Controlled -or ($owners.GoOwners -gt 0 -and $owners.RustOwners -gt 0))) {
+            # A separately confirmed ownership violation still warrants rollback.
+            $reason=if (!$owners.Controlled) {'local_control_lost'} else {'duplicate_live_owner'}
+            $decision=[pscustomobject]@{Action='ABORT';Reason=$reason;Count=$observationFailures}
+        } else {
+            if ($observationFailures -ge 3) {
+                if ($observationFailures -eq 3) {
+                    "$($at.ToString('o')) OBSERVER_DEGRADED no_rollback=true; G10 invalid until healthy" | Add-Content -LiteralPath $abortLogPath -Encoding UTF8 -ErrorAction SilentlyContinue
+                }
+                try { Write-Observation -Decision ([pscustomobject]@{Action='HOLD';Reason='observer_unhealthy';Count=$observationFailures}) -At $at -OwnerState $owners -Path $ObservationPath } catch { }
+            }
+            Start-Sleep -Seconds $PollSeconds
+            continue
+        }
     }
 
     if($decision.Action -eq 'ABORT') {
+        # Durable abort record written BEFORE any rollback runs, so postmortem
+        # can always attribute who aborted and why even when the observation
+        # file itself is broken.
+        "$($at.ToString('o')) ABORT reason=$($decision.Reason) count=$($decision.Count) go=$($owners.GoOwners) rust=$($owners.RustOwners) controlled=$($owners.Controlled)" | Add-Content -LiteralPath $abortLogPath -Encoding UTF8 -ErrorAction SilentlyContinue
         if($ArmRollback) {
             & $RollbackScript -RecoveryDirectory $RecoveryDirectory -ExpectedGoExecutable $candidate -GoServiceName $GoServiceName -Execute
             if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }

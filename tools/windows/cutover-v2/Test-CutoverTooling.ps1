@@ -60,6 +60,27 @@ $d = Get-CutoverGuardDecision -Now $now -DiagnosticEvents @() -TunnelEvents @() 
 Assert-Equal $d.Action 'ABORT' 'two unexpected restarts in five minutes must abort'
 Assert-Equal $d.Reason 'owned_process_restarts' 'restart reason'
 
+# Reproduce the 2026-10-05 false rollback: one tunnel exit plus respawn
+# was observed as two PID-signature transitions two seconds apart.
+$tripAt=[DateTimeOffset]::Parse('2026-10-05T02:37:28Z')
+$episodes=New-Object 'System.Collections.Generic.List[object]'
+foreach($transition in @($tripAt,$tripAt.AddSeconds(2))) {
+    if (Test-CutoverRestartEpisode -At $transition -RestartTimes $episodes.ToArray()) {
+        [void]$episodes.Add($transition)
+    }
+}
+Assert-Equal $episodes.Count 1 'one exit and respawn must be one restart episode'
+$d=Get-CutoverGuardDecision -Now $tripAt.AddSeconds(4) -DiagnosticEvents @() -TunnelEvents @() -Settled -OwnerState ([pscustomobject]@{GoOwners=2;RustOwners=0;Controlled=$true}) -RestartTimes $episodes.ToArray()
+Assert-Equal $d.Action 'CONTINUE' 'a recovered tunnel must not cause an automatic Go to Rust rollback'
+$secondEpisode=$tripAt.AddSeconds(90)
+if (Test-CutoverRestartEpisode -At $secondEpisode -RestartTimes $episodes.ToArray()) {
+    [void]$episodes.Add($secondEpisode)
+}
+Assert-Equal $episodes.Count 2 'a second independent restart must count'
+$d=Get-CutoverGuardDecision -Now $secondEpisode.AddSeconds(1) -DiagnosticEvents @() -TunnelEvents @() -Settled -OwnerState ([pscustomobject]@{GoOwners=2;RustOwners=0;Controlled=$true}) -RestartTimes $episodes.ToArray()
+Assert-Equal $d.Action 'ABORT' 'two actual restart episodes still abort'
+Assert-Equal $d.Reason 'owned_process_restarts' 'two actual restart episodes still trigger safety abort'
+
 $tmp = Join-Path $env:TEMP ('codexify-cutover-fixture-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 try {

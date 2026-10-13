@@ -33,6 +33,9 @@ function Get-CutoverGuardDecision {
         return [pscustomobject]@{Action='ABORT';Reason='duplicate_live_owner';Count=([int]$OwnerState.GoOwners + [int]$OwnerState.RustOwners)}
     }
 
+    if ($Settled -and [int]$OwnerState.GoOwners -gt 2) {
+        return [pscustomobject]@{Action='ABORT';Reason='duplicate_go_processes';Count=[int]$OwnerState.GoOwners}
+    }
     $recentRestarts = @($RestartTimes | Where-Object {
         $t = ConvertTo-CutoverTime $_
         $t -ge $Now.AddMinutes(-5) -and $t -le $Now
@@ -81,6 +84,20 @@ function Get-CutoverGuardDecision {
         return [pscustomobject]@{Action='HOLD';Reason='rate_limited';Count=$rateLimited.Count}
     }
 
+    # A failed egress route (e.g. a VPN flap) is not a failure of the Go owner.
+    # Keep the Go service and its PollWatcher active while observing recovery.
+    $egressFailures = @($TunnelEvents | Where-Object {
+        $eventTime = ConvertTo-CutoverTime $_.time
+        $message = Get-CutoverEventText $_ 'error'
+        if (-not $message) { $message = Get-CutoverEventText $_ 'message' }
+        if (-not $message) { $message = Get-CutoverEventText $_ 'msg' }
+        $eventTime -ge $Now.AddMinutes(-1) -and $eventTime -le $Now -and
+            $message -match 'unsupported_country_region_territory|poll transport failed \(network_error\)'
+    })
+    if ($egressFailures.Count -gt 0) {
+        return [pscustomobject]@{Action='HOLD';Reason='egress_degraded';Count=$egressFailures.Count}
+    }
+
     return [pscustomobject]@{Action='CONTINUE';Reason='within_limits';Count=0}
 }
 
@@ -122,6 +139,25 @@ function Test-RecoverySnapshot {
 # A child exit and its replacement are one restart episode, not two.
 # The helper stays in the module so a private time parser is never invoked
 # from Watch-Cutover.ps1 through a non-exported name.
+# Only the Go supervisor/worker identity affects the restart limit.
+# Tunnel child PID changes are expected self-heal and must not force rollback.
+function Get-CutoverGoSignature {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)][string]$GoExecutable,
+        [object[]]$Processes = @()
+    )
+    $path = [IO.Path]::GetFullPath($GoExecutable)
+    $parts = @($Processes | Where-Object {
+        if (-not $_.ExecutablePath) { return $false }
+        try {
+            return ([IO.Path]::GetFullPath([string]$_.ExecutablePath)).Equals($path,[StringComparison]::OrdinalIgnoreCase)
+        } catch {
+            return $false
+        }
+    } | Sort-Object ProcessId | ForEach-Object { ([string]$_.ProcessId)+':'+([string]$_.Name) })
+    return ($parts -join ',')
+}
 function Test-CutoverRestartEpisode {
     [CmdletBinding()]
     param(
@@ -136,4 +172,4 @@ function Test-CutoverRestartEpisode {
     return ($At - $last).TotalSeconds -gt $MergeSeconds
 }
 
-Export-ModuleMember -Function Get-CutoverGuardDecision,Test-RecoverySnapshot,Test-CutoverRestartEpisode
+Export-ModuleMember -Function Get-CutoverGuardDecision,Test-RecoverySnapshot,Test-CutoverRestartEpisode,Get-CutoverGoSignature

@@ -85,15 +85,7 @@ function Get-LiveOwnerState {
 function Get-OwnedSignature {
     param([string]$GoExe)
     if(!$GoExe){ return '' }
-    $goPath=[IO.Path]::GetFullPath($GoExe)
-    $runRoot=Split-Path -Parent (Split-Path -Parent $goPath)
-    $parts=@(Get-CimInstance Win32_Process | Where-Object {
-        $_.ExecutablePath -and (
-            ([IO.Path]::GetFullPath([string]$_.ExecutablePath)).Equals($goPath,[StringComparison]::OrdinalIgnoreCase) -or
-            ([IO.Path]::GetFullPath([string]$_.ExecutablePath)).StartsWith($runRoot.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase)
-        )
-    } | Sort-Object ProcessId | ForEach-Object { ([string]$_.ProcessId)+':'+([string]$_.Name) })
-    return ($parts -join ',')
+    return Get-CutoverGoSignature -GoExecutable $GoExe -Processes @(Get-CimInstance Win32_Process)
 }
 
 function Write-Observation {

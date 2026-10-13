@@ -10,7 +10,10 @@ $failures = [Collections.Generic.List[string]]::new()
 $cases = @(
     @{ Name='Go slog msg is readable'; Action='CONTINUE'; Reason='within_limits';
        Tunnel=@('{"time":"2026-10-01T17:59:59Z","level":"INFO","msg":"codexify-go starting"}' | ConvertFrom-Json) },
-    @{ Name='Go slog rate limit holds'; Action='HOLD'; Reason='rate_limited';
+    @{ Name='VPN drop 403 is HOLD not Go-to-Rust rollback'; Action='HOLD'; Reason='egress_degraded';
+       Tunnel=@('{"time":"2026-10-01T17:59:59Z","level":"WARN","msg":"poll failed; backing off","error":"controlplane client: unexpected status 403: unsupported_country_region_territory"}' | ConvertFrom-Json) },
+    @{ Name='VPN transport failure is HOLD'; Action='HOLD'; Reason='egress_degraded';
+       Tunnel=@('{"time":"2026-10-01T17:59:59Z","level":"WARN","msg":"poll failed; backing off","error":"controlplane client: poll transport failed (network_error)"}' | ConvertFrom-Json) },    @{ Name='Go slog rate limit holds'; Action='HOLD'; Reason='rate_limited';
        Tunnel=@('{"time":"2026-10-01T17:59:59Z","level":"WARN","msg":"RATE_LIMITED"}' | ConvertFrom-Json) },
     @{ Name='Legacy message rate limit holds'; Action='HOLD'; Reason='rate_limited';
        Tunnel=@('{"time":"2026-10-01T17:59:59Z","level":"WARN","message":"RATE_LIMITED"}' | ConvertFrom-Json) },

@@ -80,6 +80,29 @@ Assert-Equal $episodes.Count 2 'a second independent restart must count'
 $d=Get-CutoverGuardDecision -Now $secondEpisode.AddSeconds(1) -DiagnosticEvents @() -TunnelEvents @() -Settled -OwnerState ([pscustomobject]@{GoOwners=2;RustOwners=0;Controlled=$true}) -RestartTimes $episodes.ToArray()
 Assert-Equal $d.Action 'ABORT' 'two actual restart episodes still abort'
 Assert-Equal $d.Reason 'owned_process_restarts' 'two actual restart episodes still trigger safety abort'
+# A VPN outage causes PollWatcher to replace tunnel-client-runtime, not the
+# Go supervisor/worker. The guard must ignore both tunnel PID signatures.
+$ownerExe='C:\Fixture\codexify-go.exe'
+$fixedProcesses=@(
+    [pscustomobject]@{ProcessId=120;ExecutablePath=$ownerExe;Name='codexify-go.exe'},
+    [pscustomobject]@{ProcessId=121;ExecutablePath=$ownerExe;Name='codexify-go.exe'},
+    [pscustomobject]@{ProcessId=122;ExecutablePath='C:\Fixture\runtime\openai-tunnel\tunnel-client-runtime.exe';Name='tunnel-client-runtime.exe'}
+)
+$before=Get-CutoverGoSignature -GoExecutable $ownerExe -Processes $fixedProcesses
+$fixedProcesses[2].ProcessId=999
+$after=Get-CutoverGoSignature -GoExecutable $ownerExe -Processes $fixedProcesses
+Assert-Equal $after $before 'a tunnel-only PID change must not affect Go restart signature'
+$fixedProcesses[1].ProcessId=123
+$changed=Get-CutoverGoSignature -GoExecutable $ownerExe -Processes $fixedProcesses
+if ($changed -eq $before) { throw 'actual Go worker identity change must be visible' }
+$d=Get-CutoverGuardDecision -Now $now -DiagnosticEvents @() -TunnelEvents @() -Settled -OwnerState ([pscustomobject]@{GoOwners=3;RustOwners=0;Controlled=$true}) -RestartTimes @()
+Assert-Equal $d.Reason 'duplicate_go_processes' 'multiple independent Go owners must still abort'
+$vpn403=@([pscustomobject]@{time=$now;msg='poll failed; backing off';error='controlplane client: unexpected status 403: unsupported_country_region_territory'})
+$d=Get-CutoverGuardDecision -Now $now -DiagnosticEvents @() -TunnelEvents $vpn403 -Settled -QuietWindow -OwnerState ([pscustomobject]@{GoOwners=2;RustOwners=0;Controlled=$true}) -RestartTimes @()
+Assert-Equal $d.Action 'HOLD' 'VPN outage must not abort Go'
+Assert-Equal $d.Reason 'egress_degraded' 'VPN degraded reason'
+$d=Get-CutoverGuardDecision -Now $now.AddMinutes(2) -DiagnosticEvents @() -TunnelEvents $vpn403 -Settled -QuietWindow -OwnerState ([pscustomobject]@{GoOwners=2;RustOwners=0;Controlled=$true}) -RestartTimes @()
+Assert-Equal $d.Action 'CONTINUE' 'stale 403 must not permanently hold recovered Go'
 
 $tmp = Join-Path $env:TEMP ('codexify-cutover-fixture-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $tmp | Out-Null

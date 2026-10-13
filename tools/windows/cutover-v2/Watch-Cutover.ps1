@@ -25,13 +25,19 @@ Import-Module (Join-Path $toolDir 'CutoverGuard.psm1') -Force
 if (!$RollbackScript) { $RollbackScript = Join-Path $toolDir 'Rollback-To-Rust.ps1' }
 
 function Read-JsonLines {
-    param([string]$Path,[int]$Tail=25000)
+    # Guard decisions only use the last 60 seconds of events. Reading and
+    # parsing tens of thousands of historical JSONL rows on every poll can
+    # starve the live watcher, making a healthy Go look unobserved.
+    param([string]$Path,[int]$Tail=3000)
     if ([string]::IsNullOrWhiteSpace($Path) -or !(Test-Path -LiteralPath $Path)) { return @() }
     $files = @()
     $item = Get-Item -LiteralPath $Path
+    $cutoff = [DateTime]::UtcNow.AddMinutes(-5)
     if ($item.PSIsContainer) {
-        $files = @(Get-ChildItem -LiteralPath $Path -File -Filter '*.jsonl' -Recurse | Sort-Object LastWriteTime)
-    } else {
+        $files = @(Get-ChildItem -LiteralPath $Path -File -Filter '*.jsonl' -Recurse |
+            Where-Object { $_.LastWriteTimeUtc -ge $cutoff } |
+            Sort-Object LastWriteTimeUtc)
+    } elseif ($item.LastWriteTimeUtc -ge $cutoff) {
         $files = @($item)
     }
     $result = New-Object 'System.Collections.Generic.List[object]'

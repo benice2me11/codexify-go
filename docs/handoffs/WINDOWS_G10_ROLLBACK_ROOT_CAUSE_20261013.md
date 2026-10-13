@@ -47,3 +47,17 @@ The old sampler exited 2026-10-13 05:35 with an IOException writing `local-sampl
 Acceptance before live relaunch: all three staged PowerShell suites PASS, including 12 log compatibility cases; pinned tunnel runtime v0.0.15 and 51-file rollback snapshot validate; new sampler produced four good fixture rows; fresh entry dry-run returned `READY_DRY_RUN` without service mutation; WMI-created detached operator process was verified elevated and parented by `WmiPrvSE.exe`, not by the Rust connector tree.
 
 Do not mark G10 PASS until a fresh uninterrupted 24-hour soak is observed. Rust remains an unchanged recovery asset; no Rust watchdog development is required.
+
+## Verified Windows re-entry (2026-10-13)
+
+The first detached re-entry reached the new watcher but the entry's original `Fresh-Guard` one-shot check failed while only its first fresh observation had appeared. Recovery restored Rust and Go remained stopped; this was another operator-tooling gate, not a Go service crash. A separate second evidence directory preserves both attempts.
+
+A new entry script waits up to 40 seconds for a fresh controlled guard observation and records details on failure. The watcher now reads only recently modified JSONL files, capped to 3,000 lines per file, rather than reparsing the entire historic log on each 2-second poll.
+
+At 2026-10-13 06:27 local, the second Rust -> Go switch returned `PASS`; Go supervisor PID 8756, worker PID 21032, tunnel PID 16620; Rust owners 0, local tunnel `/readyz` 200. After successful entry, the detached orchestration wrapper stalled while waiting on PowerShell child-output handles, so post-entry service startup policy and observer registration were completed separately without stopping Go. The blocked wrapper was identified and stopped.
+
+Go SCM service is now **Running / Automatic**. Stage: `operator-tooling-g10-20261013-v2`, watcher SHA256 `859CA2A3EC0841E1DE3E2B1E7C6A80972F8889450D5622BE696C79B354247AB6`. Exactly one watcher (PID 11432), sampler (PID 11748), and metrics collector (PID 20688) were confirmed with fresh JSONL observations and no unexpected stderr files. Scheduled task `CodexifyGo-G10Observers` was updated to the new versioned launcher.
+
+New G10 soak window: **RUNNING** from **2026-10-13T03:32:42.6444336Z**, fresh dedicated evidence `evidence/g10-soak-20261013b/` and a new entry in `gate-results.json`. The binary v3 remains frozen. G11 remains pending until G10 meets its full 24-hour evidence requirements. This is launch acceptance, not soak acceptance.
+
+Future operators must not capture the stdout of a PowerShell entry script that starts long-lived descendant processes, or the orchestration wrapper may wait for inherited handles even after the entry has completed. Launch, monitor and finalize with independently recorded state.

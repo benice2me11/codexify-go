@@ -113,8 +113,9 @@ function renderStatus(s){
   const w=s.workspace||null;
   currentWorkspace=w;
   if(w){
-    const actual=w.managedWorktree?"Managed worktree":"Source checkout";
-    statusEl.innerHTML="Selected: <strong>"+actual+"</strong><div class=notice>Active: <code>"+escapeHTML(w.projectRoot||w.workspaceRoot||"")+"</code></div><div class=notice>Source: <code>"+escapeHTML(w.sourceProjectRoot||w.projectRoot||"")+"</code></div><div class=muted>Configured policy: "+escapeHTML(w.worktreeMode||s.worktreeMode||"unknown")+". To change type, use Change workspace / type first. Re-read get_agent_brief after switching.</div>";
+    const actual=w.mode==="scratch"?"Scratch workspace":w.managedWorktree?"Managed worktree":"Source checkout";
+    const sourceLine=w.mode==="scratch"?"":"<div class=notice>Source: <code>"+escapeHTML(w.sourceProjectRoot||w.projectRoot||"")+"</code></div>";
+    statusEl.innerHTML="Selected: <strong>"+actual+"</strong><div class=notice>Active: <code>"+escapeHTML(w.projectRoot||w.workspaceRoot||"")+"</code></div>"+sourceLine+"<div class=muted>Configured policy: "+escapeHTML(w.worktreeMode||s.worktreeMode||"unknown")+". To change type, use Change workspace / type first. Re-read get_agent_brief after switching.</div>";
   }else{
     statusEl.textContent=s.awaitingSelection?"Choose a workspace. Previous source files and managed worktrees have not been removed.":"No workspace selected.";
   }

@@ -246,6 +246,12 @@ original conversation rather than trusting a client-provided identifier.
 Expired or mismatched contexts fail closed and require a fresh Setup card.
 The token is scoped to setup calls, not file, shell or Git operations.
 
+The updated picker uses `ui://codexify-go/setup/v3/mcp-app.html`; the former
+v2 URI remains registered for existing mounted cards. In multi-project mode
+the connector schema version includes `+setup-v3` to make stale client
+descriptors detectable. After deploying a new connector binary, refresh the
+connection if setup_status reports that the connector schema is stale.
+
 A bound conversation never changes checkout type by calling `set_project_root`
 again. Click **Change workspace / type** first; this explicitly archives the
 existing binding, then allows selecting the same repository in another mode.

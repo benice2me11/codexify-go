@@ -38,6 +38,10 @@ func Version(cfg config.Config) string {
 	}
 	if cfg.MCP.MultiProject {
 		version += "+workspace-v1"
+		// Setup v3 changes the hosted widget resource and conversation-scoped
+		// checkout selection API. Keep the old version distinguishable so
+		// clients can suggest a connector refresh instead of reusing v2.
+		version += "+setup-v3"
 	}
 	if cfg.ArtifactIngress.Enabled {
 		version += "+artifact-ingress-v1"

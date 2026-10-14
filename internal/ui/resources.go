@@ -3,11 +3,14 @@ package ui
 import "github.com/modelcontextprotocol/go-sdk/mcp"
 
 const (
-	SetupURI  = "ui://codexify-go/setup/v2/mcp-app.html"
-	DiffURI   = "ui://codexify-go/diff/v1/mcp-app.html"
-	ChatURI   = "ui://codexify-go/markdown-chat/v2/mcp-app.html"
-	UpdateURI = "ui://codexify-go/self-update/v2/mcp-app.html"
-	MIMEType  = "text/html;profile=mcp-app"
+	// A distinct resource URI invalidates cached v2 Setup cards after the
+	// explicit checkout-mode and verified conversation-context redesign.
+	SetupURI       = "ui://codexify-go/setup/v3/mcp-app.html"
+	LegacySetupURI = "ui://codexify-go/setup/v2/mcp-app.html"
+	DiffURI        = "ui://codexify-go/diff/v1/mcp-app.html"
+	ChatURI        = "ui://codexify-go/markdown-chat/v2/mcp-app.html"
+	UpdateURI      = "ui://codexify-go/self-update/v2/mcp-app.html"
+	MIMEType       = "text/html;profile=mcp-app"
 )
 
 func SetupToolMeta() mcp.Meta {

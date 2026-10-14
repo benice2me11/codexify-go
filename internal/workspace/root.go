@@ -22,7 +22,7 @@ func Canonical(path string) (string, error) {
 	abs = NormalizePathIdentity(abs)
 	resolved, err := filepath.EvalSymlinks(abs)
 	if err == nil {
-		return NormalizePathIdentity(resolved), nil
+		return canonicalExistingPath(resolved)
 	}
 	if !errors.Is(err, os.ErrNotExist) {
 		return "", err
@@ -43,6 +43,10 @@ func Canonical(path string) (string, error) {
 		ancestor = parent
 	}
 	realAncestor, evalErr := filepath.EvalSymlinks(ancestor)
+	if evalErr != nil {
+		return "", evalErr
+	}
+	realAncestor, evalErr = canonicalExistingPath(realAncestor)
 	if evalErr != nil {
 		return "", evalErr
 	}
@@ -126,6 +130,10 @@ func (r *Root) Resolve(rel string, allowMissing bool) (string, error) {
 
 	resolved, err := filepath.EvalSymlinks(candidate)
 	if err == nil {
+		resolved, err = canonicalExistingPath(resolved)
+		if err != nil {
+			return "", err
+		}
 		if err := r.ensureInside(resolved); err != nil {
 			return "", err
 		}
@@ -158,6 +166,10 @@ func (r *Root) Resolve(rel string, allowMissing bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	realAncestor, err = canonicalExistingPath(realAncestor)
+	if err != nil {
+		return "", err
+	}
 	if err := r.ensureInside(realAncestor); err != nil {
 		return "", err
 	}
@@ -172,7 +184,11 @@ func (r *Root) Resolve(rel string, allowMissing bool) (string, error) {
 }
 
 func (r *Root) Relative(abs string) (string, error) {
-	abs = NormalizePathIdentity(abs)
+	var err error
+	abs, err = Canonical(abs)
+	if err != nil {
+		return "", err
+	}
 	if err := r.ensureInside(abs); err != nil {
 		return "", err
 	}

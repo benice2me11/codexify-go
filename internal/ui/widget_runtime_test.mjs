@@ -44,6 +44,10 @@ function host(html, options = {}) {
   const listeners = new Map();
   const calls = [];
   let active = 0, maxActive = 0, exhausted = false;
+  const sourceRoot = 'C:\\fixture';
+  const defaultWorkspace = {projectRoot:sourceRoot,sourceProjectRoot:sourceRoot,managedWorktree:false,worktreeMode:'auto'};
+  let currentWorkspace = options.initialWorkspace === undefined ? defaultWorkspace : options.initialWorkspace;
+  let previousWorkspace = null, awaitingSelection = false;
   const window = {
     addEventListener(name, listener) { const list = listeners.get(name)||[]; list.push(listener); listeners.set(name,list); },
     dispatchEvent(event) { for (const listener of listeners.get(event.type)||[]) listener(event); return true; },
@@ -61,13 +65,35 @@ function host(html, options = {}) {
       if (options.fail) throw new Error('fixture failure');
       let data;
       switch (name) {
-        case 'setup_status': data={workspace:{projectRoot:'C:\\fixture'},awaitingSelection:false}; break;
-        case 'list_projects': data={projects:[{name:'Fixture',selector:'fixture'}]}; break;
+        case 'setup_status': data={workspace:currentWorkspace,awaitingSelection,worktreeMode:'auto'}; break;
+        case 'list_projects': data={projects:[{name:'Fixture',selector:'fixture',gitRepository:true},{name:'Plain project',selector:'plain',gitRepository:false}]}; break;
         case 'chat_read': data={user_text:'Fixture unread message',state:'ready'}; break;
         case 'chat_write': data={state:'written'}; break;
         case 'self_update_status': data={status:'up_to_date',currentVersion:'fixture-v1',detail:'fixture status'}; break;
-        case 'set_project_root': data={workspace:{projectRoot:'C:\\fixture'}}; break;
-        case 'setup_ui_switch_project': data={awaitingSelection:true,workspace:null}; break;
+        case 'set_project_root':
+          if (params.resumePath) {
+            if (!awaitingSelection || !previousWorkspace || previousWorkspace.projectRoot!==params.resumePath) throw new Error('invalid resumePath');
+            currentWorkspace=previousWorkspace;
+          } else {
+            if (currentWorkspace) throw new Error('already bound');
+            if (params.withoutProject) {
+              currentWorkspace={mode:'scratch',projectRoot:sourceRoot+'\\scratch',sourceProjectRoot:'',managedWorktree:false,worktreeMode:'auto'};
+            } else {
+              if (params.createWorktree===true && params.path==='plain') throw new Error('not a Git repository');
+              const managed = params.createWorktree===true || (params.createWorktree===undefined && options.autoWorktree===true);
+              currentWorkspace={projectRoot:managed?sourceRoot+'\\managed-fixture':sourceRoot,sourceProjectRoot:sourceRoot,managedWorktree:managed,worktreeMode:'auto'};
+            }
+          }
+          awaitingSelection=false;
+          data=currentWorkspace;
+          break;
+        case 'setup_ui_switch_project':
+          if (!currentWorkspace || currentWorkspace.projectRoot!==params.expectedPath) throw new Error('wrong expectedPath');
+          previousWorkspace=currentWorkspace;
+          currentWorkspace=null;
+          awaitingSelection=true;
+          data={previousRoot:previousWorkspace.projectRoot,awaitingSelection:true};
+          break;
         default: throw new Error('unexpected fixture tool '+name);
       }
       if (options.feedback !== false) {
@@ -115,11 +141,16 @@ for (const [name,html] of Object.entries(pages)) {
     assert.equal(h.elements.get(id).disabled,false,name+' button remained disabled');
     if(name==='SetupHTML') {
       const before=h.calls.length;
+      h.click('switch');
+      await settle();
+      assert.equal(h.calls.length,before+3,'switch must call once and refresh');
+      const beforeScratch=h.calls.length;
       for(let i=0;i<20;i++) h.click('scratch');
       await settle();
-      assert.equal(h.calls.length,before+3,'setup mutation should run once then two reads');
+      assert.equal(h.calls.length,beforeScratch+3,'scratch mutation should run once then two reads');
       assert.equal(h.calls.filter(c=>c.name==='set_project_root').length,1);
-      assert.equal(h.elements.get('projects').children.length,1,'project list did not render');
+      assert.ok(h.elements.get('status').innerHTML.includes('Scratch workspace'));
+      assert.equal(h.elements.get('projects').children.length,2,'project list did not render');
       h.emit({toolOutput:{workspace:{projectRoot:'C:\\passive'},awaitingSelection:false}});
       assert.ok(h.elements.get('status').innerHTML.includes('passive'));
     } else if(name==='ChatHTML') {
@@ -147,4 +178,88 @@ for (const [name,html] of Object.entries(pages)) {
   }
   results.push({name,initialCalls:expectedInitial[name],callsAfterInteractions:h.calls.length,maxConcurrent:h.maxActive,globalsTriggeredCalls:0});
 }
+
+if (!baseline) {
+  // Exercise the actual shipped SetupHTML controller, not a substitute.
+  const setup = pages.SetupHTML;
+  const choose = (h,index=0) => {
+    const btn = h.elements.get('projects').children[index].children[1];
+    assert.ok(btn,'project Select button');
+    return btn;
+  };
+  const setMode = (h,value) => {
+    const picker=h.elements.get('workspace-mode');
+    picker.value=value;
+    picker.onchange();
+  };
+  const tool = (h,name) => h.calls.filter(call=>call.name===name);
+
+  const auto=host(setup,{initialWorkspace:null,autoWorktree:true});
+  await settle();
+  assert.equal(auto.elements.get('workspace-mode').value,'auto');
+  choose(auto).onclick();
+  await settle();
+  assert.equal(tool(auto,'set_project_root').length,1);
+  assert.equal(Object.hasOwn(tool(auto,'set_project_root')[0].params,'createWorktree'),false,'Auto must omit bool entirely');
+  assert.ok(auto.elements.get('status').innerHTML.includes('Managed worktree'),'actual mode must be displayed');
+
+  const shared=host(setup,{initialWorkspace:null,autoWorktree:true});
+  await settle();
+  setMode(shared,'source');
+  assert.ok(shared.elements.get('mode-warning').textContent.includes('Concurrent writes'),'shared source warning missing');
+  const select=choose(shared);
+  for(let i=0;i<20;i++) if(!select.disabled) select.onclick();
+  await settle();
+  assert.equal(tool(shared,'set_project_root').length,1,'source rapid clicks duplicated mutation');
+  assert.equal(tool(shared,'set_project_root')[0].params.createWorktree,false,'must pass boolean false');
+  assert.ok(shared.elements.get('status').innerHTML.includes('Source checkout'));
+  assert.ok(shared.elements.get('status').innerHTML.includes('Source:'));
+
+  const managed=host(setup,{initialWorkspace:null});
+  await settle();
+  setMode(managed,'managed');
+  assert.equal(choose(managed,1).disabled,true,'non-Git project must reject managed mode');
+  choose(managed).onclick();
+  await settle();
+  assert.equal(tool(managed,'set_project_root')[0].params.createWorktree,true,'must pass boolean true');
+  assert.ok(managed.elements.get('status').innerHTML.includes('Managed worktree'));
+
+  // Same conversation: worktree -> source, then source -> worktree; no automatic rebinding.
+  const swapped=host(setup,{initialWorkspace:{projectRoot:'C:\\fixture\\managed-fixture',sourceProjectRoot:'C:\\fixture',managedWorktree:true,worktreeMode:'auto'}});
+  await settle();
+  setMode(swapped,'source');
+  assert.equal(choose(swapped).disabled,true,'cannot reselect an immutable binding directly');
+  swapped.click('switch');
+  await settle();
+  assert.ok(swapped.elements.get('status').textContent.includes('Previous source files'),'old worktree preservation notice missing');
+  choose(swapped).onclick();
+  await settle();
+  assert.equal(tool(swapped,'set_project_root')[0].params.createWorktree,false);
+  swapped.click('switch');
+  await settle();
+  setMode(swapped,'managed');
+  choose(swapped).onclick();
+  await settle();
+  assert.equal(tool(swapped,'set_project_root')[1].params.createWorktree,true);
+  assert.equal(tool(swapped,'setup_ui_switch_project').length,2);
+  assert.equal(swapped.exhausted,false);
+
+  const restore=host(setup);
+  await settle();
+  restore.click('switch');
+  await settle();
+  assert.equal(restore.elements.get('restore').hidden,false,'restore available after explicit switch');
+  restore.click('restore');
+  await settle();
+  assert.equal(tool(restore,'set_project_root')[0].params.resumePath,'C:\\fixture','restore previous root supplied by backend');
+  assert.equal(Object.hasOwn(tool(restore,'set_project_root')[0].params,'createWorktree'),false);
+  assert.equal(restore.elements.get('restore').hidden,true);
+
+  // Host globals during selections must be passive, including after mutating tools.
+  for(let i=0;i<100;i++) managed.emit({theme:i%2?'dark':'light',maxHeight:300+i});
+  await settle();
+  assert.equal(tool(managed,'set_project_root').length,1,'host globals triggered an extra selection');
+  results.push({name:'WorkspaceModeSelection',auto:'omits createWorktree',source:'explicit false',managed:'explicit true',switch:'two directions',restore:'saved workspace',duplicateCalls:0});
+}
+
 console.log(JSON.stringify({mode:baseline?'bounded-original-reproduction':'regression',host:'synthetic; no hosted MCP calls',results},null,2));

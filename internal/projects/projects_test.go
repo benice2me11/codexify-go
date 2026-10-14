@@ -336,6 +336,77 @@ func TestAutoModeCreatesWorktreeWhenProjectAlreadyInUse(t *testing.T) {
 	}
 }
 
+// Explicit source/managed choices are independent of the auto policy. An
+// existing conversation must switch its binding before changing checkout type.
+func TestExplicitWorkspaceModeSwitchPreservesBothCheckouts(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "repo")
+	initGitRepo(t, source)
+	manager := testManager(t, root, "auto")
+	meta := map[string]any{"openai/session": "chat-mode-switch"}
+	useSource, useManaged := false, true
+
+	first, err := manager.Select(meta, "repo", &useSource)
+	if err != nil || first.ManagedWorktree {
+		t.Fatalf("initial source checkout = %+v, %v", first, err)
+	}
+	if selected, err := manager.Select(meta, "repo", &useSource); err != nil || selected.ProjectRoot != first.ProjectRoot {
+		t.Fatalf("matching re-selection must be idempotent: %+v, %v", selected, err)
+	}
+	if _, err := manager.Select(meta, "repo", &useManaged); err == nil || !strings.Contains(err.Error(), "setup_ui_switch_project") {
+		t.Fatalf("mismatching explicit mode must not silently reuse source: %v", err)
+	}
+	sourceKeep := filepath.Join(source, "keep-source.txt")
+	if err := os.WriteFile(sourceKeep, []byte("uncommitted source work"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Switch(meta, first.ProjectRoot); err != nil {
+		t.Fatal(err)
+	}
+	isolated, err := manager.Select(meta, "repo", &useManaged)
+	if err != nil || !isolated.ManagedWorktree || isolated.ProjectRoot == first.ProjectRoot {
+		t.Fatalf("explicit managed worktree = %+v, %v", isolated, err)
+	}
+	managedKeep := filepath.Join(isolated.ProjectRoot, "keep-managed.txt")
+	if err := os.WriteFile(managedKeep, []byte("uncommitted managed work"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Select(meta, "repo", &useSource); err == nil || !strings.Contains(err.Error(), "setup_ui_switch_project") {
+		t.Fatalf("mismatching explicit mode must not silently reuse worktree: %v", err)
+	}
+	if _, err := manager.Switch(meta, isolated.ProjectRoot); err != nil {
+		t.Fatal(err)
+	}
+	back, err := manager.Select(meta, "repo", &useSource)
+	if err != nil || back.ManagedWorktree || back.ProjectRoot != first.ProjectRoot {
+		t.Fatalf("return to source = %+v, %v", back, err)
+	}
+	if data, err := os.ReadFile(sourceKeep); err != nil || string(data) != "uncommitted source work" {
+		t.Fatalf("source changes lost: %q, %v", data, err)
+	}
+	if data, err := os.ReadFile(managedKeep); err != nil || string(data) != "uncommitted managed work" {
+		t.Fatalf("old managed worktree changes lost: %q, %v", data, err)
+	}
+
+	// Explicit source checkout is allowed even when another conversation uses it.
+	shared, err := manager.Select(map[string]any{"openai/session": "another-chat"}, "repo", &useSource)
+	if err != nil || shared.ManagedWorktree || shared.ProjectRoot != first.ProjectRoot {
+		t.Fatalf("explicit shared source checkout = %+v, %v", shared, err)
+	}
+}
+
+func TestManagedWorkspaceModeRejectsNonGitDirectory(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "plain"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manager := testManager(t, root, "auto")
+	useManaged := true
+	if _, err := manager.Select(map[string]any{"openai/session": "non-git"}, "plain", &useManaged); err == nil || !strings.Contains(err.Error(), "not inside a Git repository") {
+		t.Fatalf("managed checkout must require Git: %v", err)
+	}
+}
+
 func TestProjectCatalogFiltersAndSkipsNestedRepositoryContents(t *testing.T) {
 	root := t.TempDir()
 	initGitRepo(t, filepath.Join(root, "alpha"))

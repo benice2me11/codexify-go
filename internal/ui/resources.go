@@ -86,35 +86,57 @@ const SetupHTML = `<!doctype html>
 .card{border:1px solid color-mix(in srgb,currentColor 18%,transparent);border-radius:12px;padding:12px}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}button{font:inherit;padding:7px 10px;border-radius:8px;border:1px solid color-mix(in srgb,currentColor 25%,transparent);background:transparent;cursor:pointer}
 .project{display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-top:1px solid color-mix(in srgb,currentColor 12%,transparent)}
-.muted{opacity:.7;font-size:.9em}code{font-family:ui-monospace,monospace;font-size:.9em;overflow-wrap:anywhere}#error{color:#c44;white-space:pre-wrap}
+.muted{opacity:.7;font-size:.9em}.mode-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0 6px}select{font:inherit;padding:6px;border-radius:8px;max-width:100%}.warning{margin:5px 0 8px;font-size:.9em}.notice{font-size:.9em;margin:5px 0}code{font-family:ui-monospace,monospace;font-size:.9em;overflow-wrap:anywhere}#error{color:#c44;white-space:pre-wrap}
 </style>
 </head>
 <body>
 <div class="card">
-  <div class="row"><strong>Codexify Go</strong><button id="refresh">Refresh</button><button id="scratch">Scratch</button><button id="switch" hidden>Switch project</button></div>
+  <div class="row"><strong>Codexify Go</strong><button id="refresh">Refresh</button><button id="scratch">Scratch</button><button id="switch" hidden>Change workspace / type</button><button id="restore" hidden>Restore previous workspace</button></div>
   <div id="status" class="muted">Loading workspace status...</div>
+  <div class="mode-row"><label for="workspace-mode"><strong>Workspace type</strong></label><select id="workspace-mode"><option value="auto" selected>Auto (configured policy)</option><option value="source">Source checkout</option><option value="managed">Managed worktree</option></select></div>
+  <div id="mode-warning" class="warning muted"></div>
   <div id="projects"></div>
   <div id="error"></div>
 </div>
 <script>
-const statusEl=document.getElementById("status"),projectsEl=document.getElementById("projects"),errorEl=document.getElementById("error"),switchBtn=document.getElementById("switch");
+const statusEl=document.getElementById("status"),projectsEl=document.getElementById("projects"),errorEl=document.getElementById("error"),switchBtn=document.getElementById("switch"),restoreBtn=document.getElementById("restore"),modeSelect=document.getElementById("workspace-mode"),warningEl=document.getElementById("mode-warning");
 function structured(r){return r&&((r.structuredContent)||(r.structured_content)||(r.result&&r.result.structuredContent))||null}
 async function call(name,args={}){if(!(window.openai&&window.openai.callTool))throw new Error("Tool calls are unavailable in this host");return window.openai.callTool(name,args)}
-let busy=false;
+let busy=false,currentWorkspace=null,restorePath="",knownProjects=[];
+modeSelect.value="auto";
+function selectionMode(){return modeSelect.value||"auto"}
+function renderModeWarning(){
+  const mode=selectionMode();
+  warningEl.textContent=mode==="source"?"Shared checkout: other conversations or local services may use these files. Concurrent writes can conflict.":mode==="managed"?"Requires a Git repository. Creates a separate checkout and preserves the source directory.":"Uses the configured auto / always / never worktree policy.";
+}
 function renderStatus(s){
-    const w=s.workspace||null;
-    statusEl.innerHTML=w?("Selected: <code>"+escapeHTML(w.projectRoot||w.workspaceRoot||"")+"</code>"+(w.managedWorktree?" (worktree)":"")):(s.awaitingSelection?"Choose a workspace.":"No workspace selected.");
-    switchBtn.hidden=!w;
-    switchBtn.dataset.path=w&&w.projectRoot||"";
+  const w=s.workspace||null;
+  currentWorkspace=w;
+  if(w){
+    const actual=w.mode==="scratch"?"Scratch workspace":w.managedWorktree?"Managed worktree":"Source checkout";
+    const sourceLine=w.mode==="scratch"?"":"<div class=notice>Source: <code>"+escapeHTML(w.sourceProjectRoot||w.projectRoot||"")+"</code></div>";
+    statusEl.innerHTML="Selected: <strong>"+actual+"</strong><div class=notice>Active: <code>"+escapeHTML(w.projectRoot||w.workspaceRoot||"")+"</code></div>"+sourceLine+"<div class=muted>Configured policy: "+escapeHTML(w.worktreeMode||s.worktreeMode||"unknown")+". To change type, use Change workspace / type first. Re-read get_agent_brief after switching.</div>";
+  }else{
+    statusEl.textContent=s.awaitingSelection?"Choose a workspace. Previous source files and managed worktrees have not been removed.":"No workspace selected.";
+  }
+  switchBtn.hidden=!w;
+  switchBtn.dataset.path=w&&w.projectRoot||"";
+  restoreBtn.hidden=!!w||!s.awaitingSelection||!restorePath;
 }
 function renderProjects(list){
-    projectsEl.textContent="";
-    for(const p of list.projects||[]){
-      const div=document.createElement("div");div.className="project";
-      const label=document.createElement("span");label.innerHTML="<b>"+escapeHTML(p.name||p.selector)+"</b><br><span class=muted>"+escapeHTML(p.selector)+"</span>";
-      const b=document.createElement("button");b.textContent="Select";b.disabled=busy;b.onclick=()=>selectProject(p.selector);
-      div.append(label,b);projectsEl.append(div);
-    }
+  if(list)knownProjects=list.projects||[];
+  projectsEl.textContent="";
+  for(const p of knownProjects){
+    const div=document.createElement("div");div.className="project";
+    const label=document.createElement("span");
+    label.innerHTML="<b>"+escapeHTML(p.name||p.selector)+"</b><br><span class=muted>"+escapeHTML(p.selector)+(p.gitRepository===false?" (not a Git repository)":"")+"</span>";
+    const b=document.createElement("button");b.textContent="Select";
+    b.disabled=busy||!!currentWorkspace||(selectionMode()==="managed"&&p.gitRepository===false);
+    if(selectionMode()==="managed"&&p.gitRepository===false)b.title="Managed worktree requires Git";
+    else if(currentWorkspace)b.title="Choose Change workspace / type first";
+    b.onclick=()=>selectProject(p);
+    div.append(label,b);projectsEl.append(div);
+  }
 }
 function renderPayload(value){
   const p=structured(value)||value;
@@ -132,19 +154,55 @@ async function run(action){
   if(busy)return;
   busy=true;errorEl.textContent="";
   for(const button of document.querySelectorAll("button"))button.disabled=true;
+  modeSelect.disabled=true;
   try{await action()}catch(e){errorEl.textContent=String(e)}finally{
-    busy=false;for(const button of document.querySelectorAll("button"))button.disabled=false;
+    busy=false;modeSelect.disabled=false;
+    for(const button of document.querySelectorAll("button"))button.disabled=false;
+    renderProjects();
   }
 }
-async function load(){renderStatus(structured(await call("setup_status",{}))||{});renderProjects(structured(await call("list_projects",{limit:40}))||{})}
+async function load(){
+  renderStatus(structured(await call("setup_status",{}))||{});
+  renderProjects(structured(await call("list_projects",{limit:40}))||{});
+}
 function refresh(){return run(load)}
-function selectProject(path){return run(async()=>{await call("set_project_root",{path});await load()})}
+function selectProject(project){
+  return run(async()=>{
+    if(currentWorkspace)throw new Error("Already bound. Click Change workspace / type before selecting another checkout.");
+    const mode=selectionMode();
+    if(mode==="managed"&&project.gitRepository===false)throw new Error("Managed worktree requires a Git repository.");
+    const args={path:project.selector};
+    if(mode==="source")args.createWorktree=false;
+    if(mode==="managed")args.createWorktree=true;
+    const selected=structured(await call("set_project_root",args))||{};
+    await load();
+    if(mode==="source"&&selected.managedWorktree!==false)throw new Error("Source checkout was requested but the connector did not confirm it. Check the active path.");
+    if(mode==="managed"&&selected.managedWorktree!==true)throw new Error("Managed worktree was requested but the connector did not confirm it. Check the active path.");
+    restorePath="";
+    restoreBtn.hidden=true;
+  });
+}
+modeSelect.onchange=()=>{renderModeWarning();renderProjects()};
 document.getElementById("refresh").onclick=refresh;
-document.getElementById("scratch").onclick=()=>run(async()=>{await call("set_project_root",{withoutProject:true});await load()});
-switchBtn.onclick=()=>run(async()=>{await call("setup_ui_switch_project",{expectedPath:switchBtn.dataset.path||""});await load()});
+document.getElementById("scratch").onclick=()=>run(async()=>{await call("set_project_root",{withoutProject:true});restorePath="";await load()});
+switchBtn.onclick=()=>run(async()=>{
+  const oldRoot=switchBtn.dataset.path||"";
+  if(!oldRoot)throw new Error("No selected workspace to switch.");
+  const change=structured(await call("setup_ui_switch_project",{expectedPath:oldRoot}))||{};
+  if(change.awaitingSelection&&change.previousRoot)restorePath=change.previousRoot;
+  await load();
+});
+restoreBtn.onclick=()=>run(async()=>{
+  if(!restorePath)throw new Error("The previous workspace path is unavailable. Use a saved resumePath.");
+  const result=structured(await call("set_project_root",{resumePath:restorePath}))||{};
+  await load();
+  if(!result.projectRoot)throw new Error("Restore did not confirm the previous workspace.");
+  restorePath="";
+  restoreBtn.hidden=true;
+});
 function escapeHTML(v){return String(v||"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
 window.addEventListener("openai:set_globals",renderHost);
-renderHost();refresh();
+renderModeWarning();renderHost();refresh();
 </script>
 </body>
 </html>`

@@ -202,6 +202,9 @@ func (m *Manager) Select(meta map[string]any, selector string, createWorktree *b
 		}
 		if existing != nil {
 			if bindingMatchesReference(*existing, reference) {
+				if modeErr := checkExistingWorktreePreference(*existing, createWorktree); modeErr != nil {
+					return WorkspaceInfo{}, modeErr
+				}
 				return infoFromBinding(m, *existing, false), nil
 			}
 			return WorkspaceInfo{}, fmt.Errorf("this conversation is already bound to %s; use switch_project_root before selecting another workspace", existing.ProjectRoot)
@@ -228,6 +231,9 @@ func (m *Manager) Select(meta map[string]any, selector string, createWorktree *b
 		if existing != nil {
 			if cleanComparable(existing.SourceProjectRoot) != cleanComparable(source) {
 				return WorkspaceInfo{}, fmt.Errorf("this conversation is already bound to %s; use switch_project_root before selecting another workspace", existing.ProjectRoot)
+			}
+			if modeErr := checkExistingWorktreePreference(*existing, createWorktree); modeErr != nil {
+				return WorkspaceInfo{}, modeErr
 			}
 			return infoFromBinding(m, *existing, false), nil
 		}
@@ -300,6 +306,19 @@ func (m *Manager) Select(meta map[string]any, selector string, createWorktree *b
 	}
 	m.finishSwitch(identity)
 	return infoFromBinding(m, binding, true), nil
+}
+
+// A binding cannot change checkout type through an idempotent Select call.
+// Users must explicitly archive it using setup_ui_switch_project first.
+func checkExistingWorktreePreference(binding Binding, requested *bool) error {
+	if requested == nil || binding.ManagedWorktree == *requested {
+		return nil
+	}
+	actual := "source checkout"
+	if binding.ManagedWorktree {
+		actual = "managed worktree"
+	}
+	return fmt.Errorf("conversation is already bound to %s (%s); use setup_ui_switch_project before changing checkout type", binding.ProjectRoot, actual)
 }
 
 func infoFromBinding(m *Manager, binding Binding, newly bool) WorkspaceInfo {

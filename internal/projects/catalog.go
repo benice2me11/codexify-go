@@ -20,6 +20,11 @@ type ListOutput struct {
 	AccessRoot string    `json:"accessRoot"`
 	Projects   []Project `json:"projects"`
 	Total      int       `json:"total"`
+	// Carry the caller's workspace state so mounted Setup cards can display
+	// the result without an extra status call.
+	Workspace         *WorkspaceInfo `json:"workspace,omitempty"`
+	Selected          bool           `json:"selected,omitempty"`
+	AwaitingSelection bool           `json:"awaitingSelection,omitempty"`
 }
 
 func (m *Manager) List(query string, limit int) (ListOutput, error) {

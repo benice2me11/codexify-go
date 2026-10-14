@@ -22,6 +22,17 @@ func SetupToolMeta() mcp.Meta {
 	}
 }
 
+// App-callable tools are visible to the model and the Setup App, but do not
+// mount a duplicate Setup widget for each individual action.
+func AppCallableToolMeta() mcp.Meta {
+	return mcp.Meta{
+		"ui": map[string]any{
+			"visibility": []string{"model", "app"},
+		},
+		"openai/widgetAccessible": true,
+	}
+}
+
 func AppOnlyToolMeta() mcp.Meta {
 	return mcp.Meta{
 		"ui": map[string]any{
@@ -92,7 +103,7 @@ const SetupHTML = `<!doctype html>
 <body>
 <div class="card">
   <div class="row"><strong>Codexify Go</strong><button id="refresh">Refresh</button><button id="scratch">Scratch</button><button id="switch" hidden>Change workspace / type</button><button id="restore" hidden>Restore previous workspace</button></div>
-  <div id="status" class="muted">Loading workspace status...</div>
+  <div id="status" class="muted">Press Refresh to load workspace status.</div>
   <div class="mode-row"><label for="workspace-mode"><strong>Workspace type</strong></label><select id="workspace-mode"><option value="auto" selected>Auto (configured policy)</option><option value="source">Source checkout</option><option value="managed">Managed worktree</option></select></div>
   <div id="mode-warning" class="warning muted"></div>
   <div id="projects"></div>
@@ -100,11 +111,45 @@ const SetupHTML = `<!doctype html>
 </div>
 <script>
 const statusEl=document.getElementById("status"),projectsEl=document.getElementById("projects"),errorEl=document.getElementById("error"),switchBtn=document.getElementById("switch"),restoreBtn=document.getElementById("restore"),modeSelect=document.getElementById("workspace-mode"),warningEl=document.getElementById("mode-warning");
+let uiContext="",observedHostContext="",hostContextRevision=0;
+function setupContext(value){
+  if(!value||typeof value!=="object")return "";
+  const key="io.github.devnoname120/codexify/setup-context";
+  for(const meta of [value,value._meta,value.call_tool_result&&value.call_tool_result._meta,value.mcp_tool_result&&value.mcp_tool_result._meta]){
+    const token=meta&&meta[key];
+    if(typeof token==="string"&&/^[A-Za-z0-9_-]{43}$/.test(token))return token;
+  }
+  return "";
+}
+function applyHostContext(current){
+  if(current!==uiContext){uiContext=current;hostContextRevision++;}
+}
+function syncHostContext(){
+  const current=setupContext(window.openai&&window.openai.toolResponseMetadata);
+  if(current!==observedHostContext){observedHostContext=current;applyHostContext(current);}
+}
 function structured(r){return r&&((r.structuredContent)||(r.structured_content)||(r.result&&r.result.structuredContent))||null}
-async function call(name,args={}){if(!(window.openai&&window.openai.callTool))throw new Error("Tool calls are unavailable in this host");return window.openai.callTool(name,args)}
+async function call(name,args={}){
+  if(!(window.openai&&window.openai.callTool))throw new Error("Tool calls are unavailable in this host");
+  syncHostContext();
+  const revision=hostContextRevision;
+  const result=await window.openai.callTool(name,uiContext?{...args,uiContext}:args);
+  syncHostContext();
+  if(revision!==hostContextRevision)throw new Error("Workspace context changed while this request was running. Refresh to continue.");
+  const nextContext=setupContext(result);if(nextContext)uiContext=nextContext;
+  if(result&&result.isError===true){
+    const message=typeof result.content==="string"?result.content:Array.isArray(result.content)?result.content.filter(c=>c&&c.type==="text"&&typeof c.text==="string").map(c=>c.text).join("\n"):"";
+    throw new Error(message.trim()||"The request failed.");
+  }
+  return result;
+}
 let busy=false,currentWorkspace=null,restorePath="",knownProjects=[];
 modeSelect.value="auto";
 function selectionMode(){return modeSelect.value||"auto"}
+function errorText(e){
+  const value=e&&typeof e==="object"?(e.message||(e.data&&e.data.message)||JSON.stringify(e)):String(e);
+  return String(value||"Unknown error").replace(/\s+/g," ").trim().slice(0,512);
+}
 function renderModeWarning(){
   const mode=selectionMode();
   warningEl.textContent=mode==="source"?"Shared checkout: other conversations or local services may use these files. Concurrent writes can conflict.":mode==="managed"?"Requires a Git repository. Creates a separate checkout and preserves the source directory.":"Uses the configured auto / always / never worktree policy.";
@@ -122,6 +167,7 @@ function renderStatus(s){
   switchBtn.hidden=!w;
   switchBtn.dataset.path=w&&w.projectRoot||"";
   restoreBtn.hidden=!!w||!s.awaitingSelection||!restorePath;
+  if(w)projectsEl.textContent="";
 }
 function renderProjects(list){
   if(list)knownProjects=list.projects||[];
@@ -141,12 +187,17 @@ function renderProjects(list){
 function renderPayload(value){
   const p=structured(value)||value;
   if(!p||typeof p!=="object")return;
-  if(Object.hasOwn(p,"workspace")||Object.hasOwn(p,"awaitingSelection"))renderStatus(p);
-  if(Array.isArray(p.projects))renderProjects(p);
+  if(Object.hasOwn(p,"projectRoot"))renderStatus({workspace:p});
+  else if(Object.hasOwn(p,"workspace")||Object.hasOwn(p,"awaitingSelection")||Object.hasOwn(p,"selected"))renderStatus(p);
+  if(p.projects&&!currentWorkspace)renderProjects(Array.isArray(p.projects)?{projects:p.projects}:p.projects);
 }
 // Host globals are state notifications, never an instruction to call tools.
 function renderHost(event){
   const globals=event&&event.detail&&event.detail.globals;
+  if(globals&&Object.hasOwn(globals,"toolResponseMetadata")){
+    observedHostContext=setupContext(window.openai&&window.openai.toolResponseMetadata);
+    applyHostContext(setupContext(globals.toolResponseMetadata));
+  }else syncHostContext();
   if(globals&&!Object.hasOwn(globals,"toolOutput"))return;
   renderPayload(globals?globals.toolOutput:window.openai&&window.openai.toolOutput);
 }
@@ -155,7 +206,7 @@ async function run(action){
   busy=true;errorEl.textContent="";
   for(const button of document.querySelectorAll("button"))button.disabled=true;
   modeSelect.disabled=true;
-  try{await action()}catch(e){errorEl.textContent=String(e)}finally{
+  try{await action()}catch(e){errorEl.textContent=errorText(e)}finally{
     busy=false;modeSelect.disabled=false;
     for(const button of document.querySelectorAll("button"))button.disabled=false;
     renderProjects();
@@ -163,6 +214,7 @@ async function run(action){
 }
 async function load(){
   renderStatus(structured(await call("setup_status",{}))||{});
+  if(currentWorkspace){renderProjects({projects:[]});return;}
   renderProjects(structured(await call("list_projects",{limit:40}))||{});
 }
 function refresh(){return run(load)}
@@ -202,7 +254,7 @@ restoreBtn.onclick=()=>run(async()=>{
 });
 function escapeHTML(v){return String(v||"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
 window.addEventListener("openai:set_globals",renderHost);
-renderModeWarning();renderHost();refresh();
+renderModeWarning();renderHost();
 </script>
 </body>
 </html>`

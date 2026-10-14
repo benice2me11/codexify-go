@@ -237,6 +237,15 @@ worktree requires Git. Choosing Source checkout can share a directory with
 another conversation or with a running local service: concurrent writes may
 conflict.
 
+The `setup` tool mounts the single workspace picker. The picker renders the
+initial server response without starting tool calls on host/global changes.
+Refresh is an explicit action. When the host exposes a verified conversation
+context, the picker forwards its short-lived opaque `uiContext` token to
+selection, status and switching tools; the server validates it against the
+original conversation rather than trusting a client-provided identifier.
+Expired or mismatched contexts fail closed and require a fresh Setup card.
+The token is scoped to setup calls, not file, shell or Git operations.
+
 A bound conversation never changes checkout type by calling `set_project_root`
 again. Click **Change workspace / type** first; this explicitly archives the
 existing binding, then allows selecting the same repository in another mode.

@@ -316,6 +316,19 @@ func TestMultiProjectConversationBindingOverMCP(t *testing.T) {
 	}
 	defer session.Close()
 
+	metaA := mcp.Meta{"openai/session": "conversation-a"}
+	opened, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+		Meta:      metaA,
+		Name:      "setup",
+		Arguments: map[string]any{"connectorVersion": r.schemaVer},
+	})
+	if err != nil || opened.IsError {
+		t.Fatalf("setup must open a card without selecting a workspace: err=%v result=%+v", err, opened)
+	}
+	if !strings.Contains(fmt.Sprint(opened.StructuredContent), "project-a") {
+		t.Fatalf("setup should embed the discovered project list without extra UI tool calls: %#v", opened.StructuredContent)
+	}
+
 	listed, err := session.CallTool(context.Background(), &mcp.CallToolParams{
 		Name:      "list_projects",
 		Arguments: map[string]any{"query": "project-a"},
@@ -324,7 +337,6 @@ func TestMultiProjectConversationBindingOverMCP(t *testing.T) {
 		t.Fatalf("list_projects failed: err=%v result=%+v", err, listed)
 	}
 
-	metaA := mcp.Meta{"openai/session": "conversation-a"}
 	selected, err := session.CallTool(context.Background(), &mcp.CallToolParams{
 		Meta:      metaA,
 		Name:      "set_project_root",
@@ -384,8 +396,11 @@ func TestUIResourcesAndToolMetadata(t *testing.T) {
 	for _, tool := range listed.Tools {
 		metaByName[tool.Name] = tool.Meta
 	}
-	if got := metaByName["list_projects"]["ui/resourceUri"]; got != ui.SetupURI {
-		t.Fatalf("list_projects UI resource = %#v", got)
+	if got := metaByName["setup"]["ui/resourceUri"]; got != ui.SetupURI {
+		t.Fatalf("setup UI resource = %#v", got)
+	}
+	if got, ok := metaByName["list_projects"]["ui/resourceUri"]; ok {
+		t.Fatalf("list_projects must be app-callable without mounting a duplicate setup widget; got %#v", got)
 	}
 	if got := metaByName["show_diff"]["ui/resourceUri"]; got != ui.DiffURI {
 		t.Fatalf("show_diff UI resource = %#v", got)

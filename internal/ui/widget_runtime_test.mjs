@@ -56,7 +56,7 @@ function host(html, options = {}) {
     Object.assign(window.openai, globals);
     window.dispatchEvent({type:'openai:set_globals',detail:{globals}});
   }
-  window.openai = {toolOutput:options.initialOutput||null, async callTool(name, params) {
+  window.openai = {toolOutput:options.initialOutput||null,toolResponseMetadata:options.initialMetadata||null, async callTool(name, params) {
     if (calls.length >= 64) { exhausted = true; throw new Error('synthetic call budget exhausted'); }
     calls.push({name, params:JSON.parse(JSON.stringify(params))});
     active++; maxActive=Math.max(maxActive,active);
@@ -102,7 +102,7 @@ function host(html, options = {}) {
         if (options.feedback === 'sync') emit({toolOutput:data});
         else setImmediate(() => emit({toolOutput:data}));
       }
-      return {structuredContent:data};
+      return {structuredContent:data,...(options.responseMeta?{_meta:options.responseMeta}:{})};
     } finally { active--; }
   }};
   const context = vm.createContext({window,document,console});
@@ -112,10 +112,16 @@ function host(html, options = {}) {
   };
 }
 
-const expectedInitial = {SetupHTML:2,ChatHTML:1,UpdateHTML:1,DiffHTML:0};
+const setupToken = 'A'.repeat(43);
+const setupMeta = {'io.github.devnoname120/codexify/setup-context':setupToken};
+const fixtureProjects = [{name:'Fixture',selector:'fixture',gitRepository:true},{name:'Plain project',selector:'plain',gitRepository:false}];
+const selectedWorkspace = {projectRoot:'C:\\fixture',sourceProjectRoot:'C:\\fixture',managedWorktree:false,worktreeMode:'auto'};
+const unboundPayload = {workspace:null,selected:false,projects:{projects:fixtureProjects}};
+const boundPayload = {workspace:selectedWorkspace,selected:true};
+const expectedInitial = {SetupHTML:0,ChatHTML:1,UpdateHTML:1,DiffHTML:0};
 const results = [];
 for (const [name,html] of Object.entries(pages)) {
-  const h=host(html);
+  const h=host(html,name==='SetupHTML'?{initialOutput:boundPayload,initialMetadata:setupMeta}:{});
   await settle();
   if (baseline) {
     results.push({name,calls:h.calls.length,maxConcurrent:h.maxActive,budgetExhausted:h.exhausted});
@@ -136,7 +142,7 @@ for (const [name,html] of Object.entries(pages)) {
     const id=name==='UpdateHTML'?'check':'refresh';
     for(let i=0;i<20;i++) h.click(id);
     await settle();
-    assert.equal(h.calls.length,2*expectedInitial[name],name+' repeated overlapping clicks');
+    assert.equal(h.calls.length,name==='SetupHTML'?1:2*expectedInitial[name],name+' repeated overlapping clicks');
     assert.equal(h.maxActive,1,name+' concurrent widget calls');
     assert.equal(h.elements.get(id).disabled,false,name+' button remained disabled');
     if(name==='SetupHTML') {
@@ -147,10 +153,10 @@ for (const [name,html] of Object.entries(pages)) {
       const beforeScratch=h.calls.length;
       for(let i=0;i<20;i++) h.click('scratch');
       await settle();
-      assert.equal(h.calls.length,beforeScratch+3,'scratch mutation should run once then two reads');
+      assert.equal(h.calls.length,beforeScratch+2,'scratch mutation should run once then status read');
       assert.equal(h.calls.filter(c=>c.name==='set_project_root').length,1);
       assert.ok(h.elements.get('status').innerHTML.includes('Scratch workspace'));
-      assert.equal(h.elements.get('projects').children.length,2,'project list did not render');
+      assert.equal(h.elements.get('projects').children.length,0,'project list must hide while bound');
       h.emit({toolOutput:{workspace:{projectRoot:'C:\\passive'},awaitingSelection:false}});
       assert.ok(h.elements.get('status').innerHTML.includes('passive'));
     } else if(name==='ChatHTML') {
@@ -166,6 +172,7 @@ for (const [name,html] of Object.entries(pages)) {
       assert.ok(h.elements.get('status').textContent.includes('fixture-v1'));
     }
     const failed=host(html,{fail:true});
+    if(name==='SetupHTML')failed.click('refresh');
     await settle();
     const count=failed.calls.length;
     for(let i=0;i<20;i++) failed.emit({toolOutput:{unrelated:'error event'}});
@@ -194,16 +201,18 @@ if (!baseline) {
   };
   const tool = (h,name) => h.calls.filter(call=>call.name===name);
 
-  const auto=host(setup,{initialWorkspace:null,autoWorktree:true});
+  const auto=host(setup,{initialWorkspace:null,autoWorktree:true,initialOutput:unboundPayload,initialMetadata:setupMeta});
   await settle();
+  assert.equal(auto.calls.length,0,'setup card should render mounted results without calling tools');
   assert.equal(auto.elements.get('workspace-mode').value,'auto');
   choose(auto).onclick();
   await settle();
   assert.equal(tool(auto,'set_project_root').length,1);
   assert.equal(Object.hasOwn(tool(auto,'set_project_root')[0].params,'createWorktree'),false,'Auto must omit bool entirely');
+  assert.equal(tool(auto,'set_project_root')[0].params.uiContext,setupToken,'verified setup identity must travel with action');
   assert.ok(auto.elements.get('status').innerHTML.includes('Managed worktree'),'actual mode must be displayed');
 
-  const shared=host(setup,{initialWorkspace:null,autoWorktree:true});
+  const shared=host(setup,{initialWorkspace:null,autoWorktree:true,initialOutput:unboundPayload,initialMetadata:setupMeta});
   await settle();
   setMode(shared,'source');
   assert.ok(shared.elements.get('mode-warning').textContent.includes('Concurrent writes'),'shared source warning missing');
@@ -215,7 +224,7 @@ if (!baseline) {
   assert.ok(shared.elements.get('status').innerHTML.includes('Source checkout'));
   assert.ok(shared.elements.get('status').innerHTML.includes('Source:'));
 
-  const managed=host(setup,{initialWorkspace:null});
+  const managed=host(setup,{initialWorkspace:null,initialOutput:unboundPayload,initialMetadata:setupMeta});
   await settle();
   setMode(managed,'managed');
   assert.equal(choose(managed,1).disabled,true,'non-Git project must reject managed mode');
@@ -225,10 +234,11 @@ if (!baseline) {
   assert.ok(managed.elements.get('status').innerHTML.includes('Managed worktree'));
 
   // Same conversation: worktree -> source, then source -> worktree; no automatic rebinding.
-  const swapped=host(setup,{initialWorkspace:{projectRoot:'C:\\fixture\\managed-fixture',sourceProjectRoot:'C:\\fixture',managedWorktree:true,worktreeMode:'auto'}});
+  const managedWorkspace={projectRoot:'C:\\fixture\\managed-fixture',sourceProjectRoot:'C:\\fixture',managedWorktree:true,worktreeMode:'auto'};
+  const swapped=host(setup,{initialWorkspace:managedWorkspace,initialOutput:{workspace:managedWorkspace,selected:true},initialMetadata:setupMeta});
   await settle();
   setMode(swapped,'source');
-  assert.equal(choose(swapped).disabled,true,'cannot reselect an immutable binding directly');
+  assert.equal(swapped.elements.get('projects').children.length,0,'selected workspace should hide picker');
   swapped.click('switch');
   await settle();
   assert.ok(swapped.elements.get('status').textContent.includes('Previous source files'),'old worktree preservation notice missing');
@@ -244,7 +254,7 @@ if (!baseline) {
   assert.equal(tool(swapped,'setup_ui_switch_project').length,2);
   assert.equal(swapped.exhausted,false);
 
-  const restore=host(setup);
+  const restore=host(setup,{initialOutput:boundPayload,initialMetadata:setupMeta});
   await settle();
   restore.click('switch');
   await settle();
@@ -254,6 +264,14 @@ if (!baseline) {
   assert.equal(tool(restore,'set_project_root')[0].params.resumePath,'C:\\fixture','restore previous root supplied by backend');
   assert.equal(Object.hasOwn(tool(restore,'set_project_root')[0].params,'createWorktree'),false);
   assert.equal(restore.elements.get('restore').hidden,true);
+
+  const stale=host(setup,{initialWorkspace:null,initialOutput:unboundPayload,initialMetadata:setupMeta});
+  await settle();
+  choose(stale).onclick();
+  stale.emit({toolResponseMetadata:{'io.github.devnoname120/codexify/setup-context':'B'.repeat(43)}});
+  await settle();
+  assert.ok(stale.elements.get('error').textContent.includes('context changed'),'stale UI context must be rejected');
+  assert.equal(tool(stale,'set_project_root').length,1,'stale reply must not retry mutation');
 
   // Host globals during selections must be passive, including after mutating tools.
   for(let i=0;i<100;i++) managed.emit({theme:i%2?'dark':'light',maxHeight:300+i});

@@ -77,7 +77,7 @@ function host(html, options = {}) {
           } else {
             if (currentWorkspace) throw new Error('already bound');
             if (params.withoutProject) {
-              currentWorkspace={projectRoot:sourceRoot+'\\scratch',sourceProjectRoot:'',managedWorktree:false,worktreeMode:'auto'};
+              currentWorkspace={mode:'scratch',projectRoot:sourceRoot+'\\scratch',sourceProjectRoot:'',managedWorktree:false,worktreeMode:'auto'};
             } else {
               if (params.createWorktree===true && params.path==='plain') throw new Error('not a Git repository');
               const managed = params.createWorktree===true || (params.createWorktree===undefined && options.autoWorktree===true);
@@ -149,6 +149,7 @@ for (const [name,html] of Object.entries(pages)) {
       await settle();
       assert.equal(h.calls.length,beforeScratch+3,'scratch mutation should run once then two reads');
       assert.equal(h.calls.filter(c=>c.name==='set_project_root').length,1);
+      assert.ok(h.elements.get('status').innerHTML.includes('Scratch workspace'));
       assert.equal(h.elements.get('projects').children.length,2,'project list did not render');
       h.emit({toolOutput:{workspace:{projectRoot:'C:\\passive'},awaitingSelection:false}});
       assert.ok(h.elements.get('status').innerHTML.includes('passive'));

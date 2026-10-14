@@ -228,6 +228,24 @@ worktree. `always` isolates Git projects and `never` uses the source checkout.
 An explicit `createWorktree=true/false` on `set_project_root` overrides the
 configured mode for that selection.
 
+The Setup MCP App now offers **Workspace type** before selecting a project:
+**Auto (configured policy)**, **Source checkout**, and **Managed worktree**.
+Auto omits the optional `createWorktree` argument; Source sends boolean
+`false`; Managed sends boolean `true`. The selected view displays the
+**actual active root**, **source root**, and effective checkout type. Managed
+worktree requires Git. Choosing Source checkout can share a directory with
+another conversation or with a running local service: concurrent writes may
+conflict.
+
+A bound conversation never changes checkout type by calling `set_project_root`
+again. Click **Change workspace / type** first; this explicitly archives the
+existing binding, then allows selecting the same repository in another mode.
+Previous source/worktree files and uncommitted changes remain on disk; Codexify
+does not copy, stash, reset, merge or delete them. While the switch is pending,
+**Restore previous workspace** can resume the exact root returned by the
+switch operation; after a widget reload the user can resume using a separately
+saved valid `resumePath`. Refresh the agent brief after switching.
+
 `set_project_root.path` may also be a safe repository URL. GitHub HTTPS URLs
 support repository roots plus `/tree/<branch>`, `/pull/<number>`, and
 `/commit/<full-40-char-sha>`. Generic non-GitHub HTTPS/SSH URLs must end in

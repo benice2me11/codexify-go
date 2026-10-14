@@ -22,7 +22,7 @@ func TestVersionReflectsSchemaFeatures(t *testing.T) {
 	cfg.ArtifactIngress.Enabled = true
 	cfg.MCP.Upstreams = []config.UpstreamMCPConfig{{Name: "gw", Mode: "gateway"}}
 	got := Version(cfg)
-	for _, want := range []string{BaseVersion, "+workspace-v1", "+artifact-ingress-v1", "+gateway-v1"} {
+	for _, want := range []string{BaseVersion, "+workspace-v1", "+setup-v3", "+artifact-ingress-v1", "+gateway-v1"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("version %q missing %q", got, want)
 		}

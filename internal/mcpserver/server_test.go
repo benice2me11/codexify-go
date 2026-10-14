@@ -416,6 +416,16 @@ func TestUIResourcesAndToolMetadata(t *testing.T) {
 	if len(setup.Contents) != 1 || setup.Contents[0].MIMEType != ui.MIMEType || !strings.Contains(setup.Contents[0].Text, "setup_status") {
 		t.Fatalf("unexpected setup UI resource: %+v", setup.Contents)
 	}
+	if ui.SetupURI == ui.LegacySetupURI {
+		t.Fatal("new setup resource URI must differ from the legacy cached URI")
+	}
+	legacy, err := session.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: ui.LegacySetupURI})
+	if err != nil {
+		t.Fatalf("legacy mounted Setup cards must remain readable: %v", err)
+	}
+	if len(legacy.Contents) != 1 || legacy.Contents[0].Text != setup.Contents[0].Text {
+		t.Fatal("legacy Setup card must render current compatible HTML")
+	}
 	diff, err := session.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: ui.DiffURI})
 	if err != nil {
 		t.Fatal(err)

@@ -123,6 +123,14 @@ Root selection must be a single validated operation at the beginning of each cal
 
 Files/patches/imports must use per-member canonical containment checks at point of use, including symlink/reparse-point scenarios and directory creation. Do not use the parent workspace as the file-tools root. A shell command is **not** restricted to the member by its workdir; expose this as a Trusted Workspace behavior. An optional future Sandboxed Workspace may use OS/container permissions. No security claim that is unsupported by the runtime.
 
+## 4.5 Prerequisite — explicit workspace checkout-mode selection
+
+**Track independently before Project Groups UI:** [WORKSPACE_MODE_SELECTION_UI_20261014.md](../../handoffs/WORKSPACE_MODE_SELECTION_UI_20261014.md) and [candidate PR #5](https://github.com/benice2me11/codexify-go/pull/5).
+
+The current single-project Setup App originally omitted `createWorktree` and could silently bind to an auto-created managed worktree. The focused fix must expose **Auto / Source checkout / Managed worktree**, preserve the existing nil/false/true semantics, support same-project switching from a chat using an explicit archived-binding flow, show both actual source/active roots, warn on shared checkouts, and preserve dirty files/old worktrees.
+
+**Sequence:** job-search G01 remains P0 and does not depend on this UX feature; checkout-mode UI is P1; Project Groups is P2. The standalone UI fix must pass its own Go/widget tests and Windows live acceptance before its control is reused for selecting each group member. Project Groups configuration should not invent a conflicting global policy or silently select managed worktrees when the user has chosen Source checkout. PG-A02/PG-A06/PG-A08 must additionally verify each member's actual mode and both change directions in one conversation.
+
 ## 5. Implementation sequence (separate reviewable PRs)
 
 **PG-I0 — Baseline and contract (docs/test fixtures).**

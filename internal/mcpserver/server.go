@@ -149,6 +149,9 @@ func NewWithToken(cfg config.Config, logger *slog.Logger, token string) (*Runtim
 		log:       logger,
 	}
 	instructions := "Select a workspace before project work in multi-project mode, then call get_agent_brief once and follow the returned environment, saved state, skills, and AGENTS.md instructions. Connector version marker: " + schemaVersion
+	if cfg.MCP.ProjectGroupsEnabled {
+		instructions += " Project Groups are enabled: call list_project_groups and set_project_group for one conversation spanning several configured Git repositories. Tools with an optional repository alias route only that call; set_active_repository changes the implicit default. Always inspect the effective checkout identity before mutations. Shell commands use normal OS account permissions and are not sandboxed."
+	}
 	if cfg.AgentChat.Enabled {
 		instructions += " Markdown chat is enabled: use chat_write for user-facing Markdown chat messages, chat_read for new CHAT.md user text, and chat_await as the idle state; do not treat chat_write/chat_read as terminal actions."
 	}

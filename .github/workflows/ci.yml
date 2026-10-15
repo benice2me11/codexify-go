@@ -32,6 +32,10 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./tools/windows/cutover-v2/Test-G10RuntimeInspection.ps1
+      - name: Go-only upgrade policy and rollback safety fixtures
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tools/windows/cutover-v2/Test-GoOnlyUpgrade.ps1
       - name: Build native binary
         shell: bash
         run: |

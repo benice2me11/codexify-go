@@ -17,6 +17,7 @@ import (
 
 	"github.com/benice2me11/codexify-go/internal/config"
 	"github.com/benice2me11/codexify-go/internal/ui"
+	"github.com/benice2me11/codexify-go/internal/workspace"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -61,6 +62,18 @@ func object(out *mcp.CallToolResult) (map[string]any, error) {
 	err = json.Unmarshal(raw, &data)
 	return data, err
 }
+
+// Windows runners can spell one directory using both RUNNER~1 and its long
+// name. Compare canonical on-disk identity rather than cleaned path strings.
+func sameRoot(a, b string) bool {
+	left, err := workspace.Canonical(a)
+	if err != nil {
+		return false
+	}
+	right, err := workspace.Canonical(b)
+	return err == nil && strings.EqualFold(left, right)
+}
+
 func run(candidate string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 80*time.Second)
 	defer cancel()
@@ -229,7 +242,7 @@ func run(candidate string) error {
 	}
 	sourceInfo, _ := object(source)
 	sourceRoot, _ := sourceInfo["projectRoot"].(string)
-	if !strings.EqualFold(filepath.Clean(sourceRoot), filepath.Clean(repo)) || sourceInfo["managedWorktree"] != false {
+	if !sameRoot(sourceRoot, repo) || sourceInfo["managedWorktree"] != false {
 		return fmt.Errorf("source selection mismatch: %#v", sourceInfo)
 	}
 	if _, err := call("read_file", map[string]any{"path": "README.txt"}); err != nil {
@@ -248,7 +261,7 @@ func run(candidate string) error {
 	}
 	managedInfo, _ := object(managed)
 	managedRoot, _ := managedInfo["projectRoot"].(string)
-	if managedInfo["managedWorktree"] != true || managedRoot == "" || strings.EqualFold(managedRoot, sourceRoot) {
+	if managedInfo["managedWorktree"] != true || managedRoot == "" || sameRoot(managedRoot, sourceRoot) {
 		return fmt.Errorf("managed selection mismatch: %#v", managedInfo)
 	}
 	if _, err := call("setup_ui_switch_project", map[string]any{"expectedPath": managedRoot}); err != nil {
@@ -259,7 +272,7 @@ func run(candidate string) error {
 		return err
 	}
 	backInfo, _ := object(back)
-	if !strings.EqualFold(fmt.Sprint(backInfo["projectRoot"]), sourceRoot) || backInfo["managedWorktree"] != false {
+	if !sameRoot(fmt.Sprint(backInfo["projectRoot"]), sourceRoot) || backInfo["managedWorktree"] != false {
 		return fmt.Errorf("same chat did not return to source: %#v", backInfo)
 	}
 	if _, err := os.Stat(managedRoot); err != nil {

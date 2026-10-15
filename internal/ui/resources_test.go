@@ -20,12 +20,19 @@ func TestWidgetsDoNotCallToolsFromHostGlobals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	// Windows CI runners may cold-start Node under parallel Go package tests.
+	// Keep a finite timeout, but distinguish resource-starved launches from
+	// an actual JavaScript assertion failure with an actionable error.
+	const timeout = 60 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, node, "widget_runtime_test.mjs")
 	cmd.Stdin = bytes.NewReader(payload)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if ctx.Err() != nil {
+			t.Fatalf("widget runtime test timed out after %s (node=%q): %v\n%s", timeout, node, ctx.Err(), output)
+		}
 		t.Fatalf("widget runtime test failed: %v\n%s", err, output)
 	}
 	t.Log(string(output))

@@ -127,6 +127,14 @@ func (f *Files) WriteFile(in WriteFileInput) (WriteFileOutput, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return WriteFileOutput{}, err
 	}
+	// A missing parent may have been created or replaced with a junction
+	// between the first resolution and MkdirAll. Recheck canonical containment
+	// immediately before writing. This narrows, but does not eliminate, races
+	// with a hostile process that can mutate the directory concurrently.
+	revalidated, err := f.Root.Resolve(in.Path, true)
+	if err != nil || revalidated != path {
+		return WriteFileOutput{}, errors.New("workspace destination changed before file write")
+	}
 	if err := os.WriteFile(path, []byte(in.Content), 0o644); err != nil {
 		return WriteFileOutput{}, err
 	}

@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/benice2me11/codexify-go/internal/config"
+	"github.com/benice2me11/codexify-go/internal/workspace"
 	"gopkg.in/yaml.v3"
 )
 
@@ -63,6 +64,20 @@ func (r *Reader) AddRoot(path, scope string) {
 }
 
 func (r *Reader) List(workDir string) (Catalog, error) {
+	return r.list(workDir, nil)
+}
+
+// ListWithin enforces member-root containment on repository-local skill
+// packages. Explicitly configured global user/plugin roots retain their
+// shared scopes, so callers can distinguish them from repo instructions.
+func (r *Reader) ListWithin(root *workspace.Root) (Catalog, error) {
+	if root == nil {
+		return Catalog{}, errors.New("skill catalog requires an active checkout")
+	}
+	return r.list(root.Path(), root)
+}
+
+func (r *Reader) list(workDir string, confinement *workspace.Root) (Catalog, error) {
 	if !r.cfg.Enabled {
 		return Catalog{Content: "Skills are disabled by the server configuration. Nothing was searched."}, nil
 	}
@@ -86,6 +101,17 @@ func (r *Reader) List(workDir string) (Catalog, error) {
 			}
 			dir := filepath.Join(root.path, entry.Name())
 			path := filepath.Join(dir, FileName)
+			if confinement != nil && root.scope == "repo" {
+				rel, relErr := filepath.Rel(confinement.Path(), path)
+				if relErr != nil {
+					continue
+				}
+				resolved, resolveErr := confinement.Resolve(rel, false)
+				if resolveErr != nil {
+					continue
+				}
+				path = resolved
+			}
 			data, err := os.ReadFile(path)
 			if err != nil {
 				continue
@@ -145,6 +171,17 @@ type ReadOutput struct {
 }
 
 func (r *Reader) Read(workDir string, in ReadInput) (ReadOutput, error) {
+	return r.read(workDir, in, nil)
+}
+
+func (r *Reader) ReadWithin(root *workspace.Root, in ReadInput) (ReadOutput, error) {
+	if root == nil {
+		return ReadOutput{}, errors.New("skill read requires an active checkout")
+	}
+	return r.read(root.Path(), in, root)
+}
+
+func (r *Reader) read(workDir string, in ReadInput, confinement *workspace.Root) (ReadOutput, error) {
 	if !r.cfg.Enabled {
 		return ReadOutput{}, errors.New("skills are disabled by the server configuration")
 	}
@@ -152,7 +189,7 @@ func (r *Reader) Read(workDir string, in ReadInput) (ReadOutput, error) {
 	if name == "" {
 		return ReadOutput{}, errors.New("a skill name is required")
 	}
-	catalog, err := r.List(workDir)
+	catalog, err := r.list(workDir, confinement)
 	if err != nil {
 		return ReadOutput{}, err
 	}
@@ -182,6 +219,11 @@ func (r *Reader) Read(workDir string, in ReadInput) (ReadOutput, error) {
 	path, err := resolveResource(skill.dir, resource)
 	if err != nil {
 		return ReadOutput{}, err
+	}
+	if confinement != nil && skill.Scope == "repo" {
+		if _, err := confinement.Relative(path); err != nil {
+			return ReadOutput{}, errors.New("repository-local skill resource escapes the selected checkout")
+		}
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {

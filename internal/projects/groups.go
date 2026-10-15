@@ -48,6 +48,7 @@ type groupSource struct {
 	member       GroupMember
 	declaredPath string
 	fileIdentity os.FileInfo
+	physicalID   string
 }
 
 type groupRecord struct {
@@ -116,6 +117,10 @@ func NewGroupRegistry(access *workspace.Root, cfg config.MCPConfig) (*GroupRegis
 			// this is still the original checkout; otherwise a later SameFile
 			// after rename/replacement could reopen the *new* path as both IDs.
 			_ = os.SameFile(identity, identity)
+			physicalID, err := directoryIdentity(source)
+			if err != nil {
+				return nil, fmt.Errorf("group %q repository %q source identity unavailable: %w", spec.Name, repo.Alias, err)
+			}
 			member := GroupMember{
 				Alias:             key,
 				Project:           strings.ToLower(strings.TrimSpace(repo.Project)),
@@ -128,13 +133,13 @@ func NewGroupRegistry(access *workspace.Root, cfg config.MCPConfig) (*GroupRegis
 					return nil, fmt.Errorf("group %q has duplicate or overlapping repository roots (%q and %q)", spec.Name, prior.Alias, repo.Alias)
 				}
 			}
-			group.sources[key] = groupSource{member: member, declaredPath: declared, fileIdentity: identity}
+			group.sources[key] = groupSource{member: member, declaredPath: declared, fileIdentity: identity, physicalID: physicalID}
 			group.definition.Repositories = append(group.definition.Repositories, member)
 		}
 		sort.Slice(group.definition.Repositories, func(i, j int) bool {
 			return group.definition.Repositories[i].Alias < group.definition.Repositories[j].Alias
 		})
-		group.definition.MembershipFingerprint = groupFingerprint(group.definition)
+		group.definition.MembershipFingerprint = groupFingerprint(group.definition, group.sources)
 		registry.groups[strings.ToLower(group.definition.Name)] = group
 	}
 	return registry, nil
@@ -194,15 +199,25 @@ func groupPathWithin(parent, child string) bool {
 	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel))
 }
 
-func groupFingerprint(group GroupDefinition) string {
-	// Repositories have already been sorted by normalized alias; JSON
-	// field-order is stable, so this is reproducible across restarts.
+func groupFingerprint(group GroupDefinition, sources map[string]groupSource) string {
+	// Incorporate an OS-level directory ID in the private hash payload. The
+	// identifier is intentionally not exposed by list_project_groups, but a
+	// checkout replaced at the same path between worker restarts now changes
+	// the persisted membership fingerprint and fails closed.
+	type memberIdentity struct {
+		GroupMember
+		PhysicalID string `json:"physicalId"`
+	}
+	identities := make([]memberIdentity, 0, len(group.Repositories))
+	for _, repo := range group.Repositories {
+		identities = append(identities, memberIdentity{repo, sources[repo.Alias].physicalID})
+	}
 	payload, _ := json.Marshal(struct {
-		Version      int           `json:"version"`
-		Name         string        `json:"name"`
-		Primary      string        `json:"primary"`
-		Repositories []GroupMember `json:"repositories"`
-	}{1, strings.ToLower(group.Name), group.Primary, group.Repositories})
+		Version      int              `json:"version"`
+		Name         string           `json:"name"`
+		Primary      string           `json:"primary"`
+		Repositories []memberIdentity `json:"repositories"`
+	}{2, strings.ToLower(group.Name), group.Primary, identities})
 	sum := sha256.Sum256(payload)
 	return hex.EncodeToString(sum[:])
 }
@@ -250,6 +265,10 @@ func (r *GroupRegistry) ResolveSource(groupName, alias string) (ResolvedGroupSou
 	info, err := os.Stat(canonical)
 	if err != nil || !os.SameFile(member.fileIdentity, info) {
 		return ResolvedGroupSource{}, fmt.Errorf("group %q alias %q source checkout was replaced; explicit rebind required", groupName, alias)
+	}
+	physicalID, err := directoryIdentity(canonical)
+	if err != nil || physicalID != member.physicalID {
+		return ResolvedGroupSource{}, fmt.Errorf("group %q alias %q physical checkout identity changed; explicit rebind required", groupName, alias)
 	}
 	gitRoot, err := gitTopLevel(canonical)
 	if err != nil || !sameGroupPath(gitRoot, member.member.GitRoot) {

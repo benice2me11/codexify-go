@@ -24,9 +24,22 @@ type pgFixture struct {
 	meta    mcp.Meta
 }
 
-func newPGFixture(t *testing.T) *pgFixture {
+func newPGFixture(t *testing.T, upstreams ...config.UpstreamMCPConfig) *pgFixture {
+	return newPGFixtureConfig(t, func(cfg *config.Config) {
+		cfg.MCP.Upstreams = append([]config.UpstreamMCPConfig(nil), upstreams...)
+	})
+}
+
+func newPGFixtureConfig(t *testing.T, configure func(*config.Config)) *pgFixture {
 	t.Helper()
 	root := t.TempDir()
+	// Group fixtures must not use the operator's persistent connector schema
+	// or generated-skills home directories.
+	if runtime.GOOS == "windows" {
+		t.Setenv("USERPROFILE", filepath.Join(root, "fixture-home"))
+	} else {
+		t.Setenv("HOME", filepath.Join(root, "fixture-home"))
+	}
 	paths := map[string]string{
 		"work": filepath.Join(root, "work-search"),
 		"hh":   filepath.Join(root, "hh-mcp-server"),
@@ -78,6 +91,9 @@ func newPGFixture(t *testing.T) *pgFixture {
 	cfg.ArtifactEgress.Dir = filepath.Join(t.TempDir(), "artifacts")
 	cfg.ArtifactEgress.MaxSnapshotBytes = 4 << 20
 	cfg.ArtifactEgress.SnapshotMaxFileBytes = 1 << 20
+	if configure != nil {
+		configure(&cfg)
+	}
 	r, err := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
@@ -366,5 +382,119 @@ func TestProjectGroupDisabledDoesNotAdvertiseGroupTools(t *testing.T) {
 	})
 	if err == nil && (unsafe == nil || !unsafe.IsError) {
 		t.Fatalf("legacy single-project mode accepted an unrelated alias: %+v", unsafe)
+	}
+}
+
+func TestProjectGroupExportResourceRequiresOwnerBinding(t *testing.T) {
+	f := newPGFixture(t)
+	pgCall(t, f, "set_project_group", map[string]any{"name": "job-search"})
+	exported := pgCall(t, f, "export_host_file", map[string]any{
+		"repository": "hh", "path": "README.md",
+	})
+	var link *mcp.ResourceLink
+	for _, part := range exported.Content {
+		if resource, ok := part.(*mcp.ResourceLink); ok {
+			link = resource
+			break
+		}
+	}
+	if link == nil {
+		t.Fatalf("group export did not return resource link: %+v", exported)
+	}
+	if _, err := f.session.ReadResource(context.Background(), &mcp.ReadResourceParams{
+		URI: link.URI,
+	}); err == nil {
+		t.Fatal("resource URL alone authorized group artifact read")
+	}
+	if _, err := f.session.ReadResource(context.Background(), &mcp.ReadResourceParams{
+		Meta: mcp.Meta{"openai/session": "pg-chat-foreign"}, URI: link.URI,
+	}); err == nil {
+		t.Fatal("second conversation read first conversation artifact")
+	}
+	read, err := f.session.ReadResource(context.Background(), &mcp.ReadResourceParams{
+		Meta: f.meta, URI: link.URI,
+	})
+	if err != nil || len(read.Contents) != 1 || string(read.Contents[0].Blob) != "project-hh\n" {
+		t.Fatalf("own conversation cannot read exported resource: %+v %v", read, err)
+	}
+	// Active alias does not alter the originating member's access right.
+	pgCall(t, f, "set_active_repository", map[string]any{"repository": "habr"})
+	read, err = f.session.ReadResource(context.Background(), &mcp.ReadResourceParams{Meta: f.meta, URI: link.URI})
+	if err != nil || string(read.Contents[0].Blob) != "project-hh\n" {
+		t.Fatalf("active alias change incorrectly revoked same binding: %+v %v", read, err)
+	}
+	// The archived previous epoch is never allowed to keep serving artifacts.
+	pgCall(t, f, "setup_ui_switch_project", map[string]any{})
+	pgCall(t, f, "set_project_group", map[string]any{"name": "job-search"})
+	if _, err := f.session.ReadResource(context.Background(), &mcp.ReadResourceParams{
+		Meta: f.meta, URI: link.URI,
+	}); err == nil {
+		t.Fatal("old group binding epoch retained access to exported resource")
+	}
+}
+
+func TestProjectGroupSkillsStayMemberScoped(t *testing.T) {
+	f := newPGFixture(t)
+	for _, alias := range []string{"hh", "habr"} {
+		skillDir := filepath.Join(f.paths[alias], ".agents", "skills", alias+"-only")
+		if err := os.MkdirAll(skillDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		contents := "---\nname: " + alias + "-only\ndescription: local skill for " + alias + "\n---\n\nunique-skill-" + alias + "\n"
+		if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(contents), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pgCall(t, f, "set_project_group", map[string]any{"name": "job-search"})
+	pgCall(t, f, "set_active_repository", map[string]any{"repository": "habr"})
+	for _, alias := range []string{"hh", "habr"} {
+		other := "hh"
+		if alias == "hh" {
+			other = "habr"
+		}
+		catalog := pgValue(t, pgCall(t, f, "skills_list", map[string]any{"repository": alias}))
+		printed := fmt.Sprint(catalog)
+		if !strings.Contains(printed, alias+"-only") || strings.Contains(printed, other+"-only") {
+			t.Fatalf("%s catalog includes wrong member: %+v", alias, catalog)
+		}
+		read := pgValue(t, pgCall(t, f, "skills_read", map[string]any{
+			"repository": alias, "name": alias + "-only",
+		}))
+		if !strings.Contains(fmt.Sprint(read), "unique-skill-"+alias) {
+			t.Fatalf("%s skill not routed: %+v", alias, read)
+		}
+		pgExpectError(t, f, "skills_read", map[string]any{
+			"repository": alias, "name": other + "-only",
+		})
+	}
+}
+
+func TestProjectGroupMarkdownChatRemainsOnPrimary(t *testing.T) {
+	f := newPGFixtureConfig(t, func(cfg *config.Config) {
+		cfg.AgentChat.Enabled = true
+		cfg.AgentChat.Dir = filepath.Join(cfg.MCP.WorkspaceRoot, ".fixture-chats")
+	})
+	pgCall(t, f, "set_project_group", map[string]any{"name": "job-search"})
+	first := pgValue(t, pgCall(t, f, "chat_write", map[string]any{"message": "primary chat record"}))
+	firstPath, ok := first["chat_file"].(string)
+	if !ok || firstPath == "" {
+		t.Fatalf("group chat did not expose a stable file path: %+v", first)
+	}
+	pgCall(t, f, "set_active_repository", map[string]any{"repository": "hh"})
+	second := pgValue(t, pgCall(t, f, "chat_write", map[string]any{"message": "another member, same chat"}))
+	if second["chat_file"] != firstPath {
+		t.Fatalf("active member changed group chat path: first=%q second=%+v", firstPath, second)
+	}
+	habrBrief := pgValue(t, pgCall(t, f, "get_agent_brief", map[string]any{"repository": "habr"}))
+	if !strings.Contains(fmt.Sprint(habrBrief), firstPath) {
+		t.Fatalf("member brief did not reference primary group chat: %+v", habrBrief)
+	}
+	data, err := os.ReadFile(firstPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "primary chat record") ||
+		!strings.Contains(string(data), "another member, same chat") {
+		t.Fatalf("group CHAT.md lost member-independent messages: %s", data)
 	}
 }

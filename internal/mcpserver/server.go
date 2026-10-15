@@ -181,7 +181,23 @@ func NewWithToken(cfg config.Config, logger *slog.Logger, token string) (*Runtim
 			if req == nil || req.Params == nil {
 				return nil, mcp.ResourceNotFoundError("")
 			}
-			return r.artifacts.Read(req.Params.URI)
+			meta := map[string]any(req.Params.Meta)
+			if projects.IdentityFromMeta(meta) == nil && req.Session != nil {
+				meta = projects.WithTransportSession(meta, req.Session.ID())
+			}
+			return r.artifacts.ReadAuthorized(req.Params.URI, func(owner artifacts.Owner) bool {
+				identity := projects.IdentityFromMeta(meta)
+				if identity == nil || identity.Key != owner.Conversation {
+					return false
+				}
+				root, selection, err := r.projects.WorkspaceFor(meta, owner.Repository)
+				return err == nil && selection.Mode == "group" &&
+					selection.GroupName == owner.Group &&
+					selection.EffectiveRepository == owner.Repository &&
+					selection.MembershipFingerprint == owner.Fingerprint &&
+					selection.BindingEpoch == owner.BindingEpoch &&
+					root.Path() == owner.ProjectRoot
+			})
 		})
 	}
 	generatedSkillsDir := ""
@@ -490,7 +506,13 @@ func (r *Runtime) registerTools() {
 		if err != nil {
 			return nil, projectdoc.Document{}, err
 		}
-		return &mcp.CallToolResult{Meta: repositoryToolMeta(selection)}, projectdoc.Load(root.Path(), r.cfg.ProjectDoc), nil
+		var doc projectdoc.Document
+		if selection.Mode == "group" {
+			doc = projectdoc.LoadWithin(root, r.cfg.ProjectDoc)
+		} else {
+			doc = projectdoc.Load(root.Path(), r.cfg.ProjectDoc)
+		}
+		return &mcp.CallToolResult{Meta: repositoryToolMeta(selection)}, doc, nil
 	})
 
 	mcp.AddTool(r.server, &mcp.Tool{
@@ -719,7 +741,12 @@ func (r *Runtime) registerTools() {
 		if err != nil {
 			return nil, skills.Catalog{}, err
 		}
-		out, err := r.skills.List(root.Path())
+		var out skills.Catalog
+		if selection.Mode == "group" {
+			out, err = r.skills.ListWithin(root)
+		} else {
+			out, err = r.skills.List(root.Path())
+		}
 		return &mcp.CallToolResult{Meta: repositoryToolMeta(selection)}, out, err
 	})
 
@@ -731,7 +758,12 @@ func (r *Runtime) registerTools() {
 		if err != nil {
 			return nil, skills.ReadOutput{}, err
 		}
-		out, err := r.skills.Read(root.Path(), in)
+		var out skills.ReadOutput
+		if selection.Mode == "group" {
+			out, err = r.skills.ReadWithin(root, in)
+		} else {
+			out, err = r.skills.Read(root.Path(), in)
+		}
 		return &mcp.CallToolResult{Meta: repositoryToolMeta(selection)}, out, err
 	})
 
@@ -743,7 +775,22 @@ func (r *Runtime) registerTools() {
 		if err != nil {
 			return nil, artifacts.Receipt{}, err
 		}
-		link, receipt, err := r.artifacts.Export(root, in.Path)
+		var owner *artifacts.Owner
+		if selection.Mode == "group" {
+			identity := projects.IdentityFromMeta(r.requestMeta(req))
+			if identity == nil {
+				return nil, artifacts.Receipt{}, errors.New("grouped artifact export requires a conversation identity")
+			}
+			owner = &artifacts.Owner{
+				Conversation: identity.Key,
+				Group:        selection.GroupName,
+				Repository:   selection.EffectiveRepository,
+				ProjectRoot:  root.Path(),
+				Fingerprint:  selection.MembershipFingerprint,
+				BindingEpoch: selection.BindingEpoch,
+			}
+		}
+		link, receipt, err := r.artifacts.ExportScoped(root, in.Path, owner)
 		if err != nil {
 			return nil, artifacts.Receipt{}, err
 		}
@@ -1468,7 +1515,13 @@ func (r *Runtime) agentBrief(req *mcp.CallToolRequest, repository string) (strin
 	}
 
 	if r.cfg.Skills.Enabled {
-		catalog, err := r.skills.List(root.Path())
+		var catalog skills.Catalog
+		var err error
+		if selection.Mode == "group" {
+			catalog, err = r.skills.ListWithin(root)
+		} else {
+			catalog, err = r.skills.List(root.Path())
+		}
 		if err != nil {
 			return "", err
 		}
@@ -1490,7 +1543,12 @@ func (r *Runtime) agentBrief(req *mcp.CallToolRequest, repository string) (strin
 		sections = append(sections, "## This conversation's Markdown chat\n\nCHAT.md: `"+path+"`\n\nRead new user text with chat_read, send user-facing Markdown with chat_write, and use chat_await as the idle state. Direct read_file/grep is for history only; do not write CHAT.md with ordinary file tools.")
 	}
 
-	doc := projectdoc.Load(root.Path(), r.cfg.ProjectDoc)
+	var doc projectdoc.Document
+	if selection.Mode == "group" {
+		doc = projectdoc.LoadWithin(root, r.cfg.ProjectDoc)
+	} else {
+		doc = projectdoc.Load(root.Path(), r.cfg.ProjectDoc)
+	}
 	if strings.TrimSpace(doc.Content) != "" {
 		sections = append(sections, "The project's own instructions follow the marker below. They take precedence over the generic workflow guidance above.\n\n"+projectdoc.Separator+"\n\n"+doc.Content)
 	}

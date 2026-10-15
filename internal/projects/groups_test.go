@@ -221,3 +221,32 @@ func TestGroupRegistryMembershipChangeChangesFingerprint(t *testing.T) {
 		t.Fatal("changing checkout mode did not invalidate group fingerprint")
 	}
 }
+
+func TestGroupBindingRejectsCheckoutReplacementAcrossManagerRestart(t *testing.T) {
+	root, cfg := projectGroupFixture(t)
+	meta := map[string]any{"openai/session": "physical-checkout-identity-restart"}
+	first, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := first.SelectGroup(meta, "job-search"); err != nil {
+		t.Fatal(err)
+	}
+	oldFingerprint := first.ListProjectGroups()[0].MembershipFingerprint
+	hh := filepath.Join(root, "hh-mcp-server")
+	if err := os.Rename(hh, filepath.Join(root, "hh-before-replacement")); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, hh)
+	restarted, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newFingerprint := restarted.ListProjectGroups()[0].MembershipFingerprint
+	if oldFingerprint == newFingerprint {
+		t.Fatal("new checkout at identical path retained the old membership fingerprint")
+	}
+	if _, _, err := restarted.Workspace(meta); err == nil || !strings.Contains(err.Error(), "membership changed") {
+		t.Fatalf("old v3 group binding accepted replaced checkout after restart: %v", err)
+	}
+}

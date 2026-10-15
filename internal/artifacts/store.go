@@ -40,6 +40,18 @@ type Receipt struct {
 	ChatLink string `json:"chatLink"`
 }
 
+// Owner binds a grouped export to the exact conversation and checkout epoch.
+// All fields must originate from validated server-side workspace resolution,
+// never from user-supplied artifact arguments.
+type Owner struct {
+	Conversation string `json:"conversation"`
+	Group        string `json:"group"`
+	Repository   string `json:"repository"`
+	ProjectRoot  string `json:"projectRoot"`
+	Fingerprint  string `json:"membershipFingerprint"`
+	BindingEpoch string `json:"bindingEpoch"`
+}
+
 type record struct {
 	Version        int    `json:"version"`
 	Token          string `json:"token"`
@@ -51,6 +63,7 @@ type record struct {
 	Snapshot       string `json:"snapshot,omitempty"`
 	SourceRoot     string `json:"sourceRoot,omitempty"`
 	SourceRelative string `json:"sourceRelative,omitempty"`
+	Owner          *Owner `json:"owner,omitempty"`
 }
 
 func New(cfg config.ArtifactEgressConfig) (*Store, error) {
@@ -72,11 +85,24 @@ func New(cfg config.ArtifactEgressConfig) (*Store, error) {
 func (s *Store) Enabled() bool { return s.cfg.Enabled }
 
 func (s *Store) Export(root *workspace.Root, rel string) (*mcp.ResourceLink, Receipt, error) {
+	return s.ExportScoped(root, rel, nil)
+}
+
+// ExportScoped creates a protected group resource when owner is nonnil.
+// Legacy unscoped exports retain their established token-capability behavior.
+func (s *Store) ExportScoped(root *workspace.Root, rel string, owner *Owner) (*mcp.ResourceLink, Receipt, error) {
 	if !s.cfg.Enabled {
 		return nil, Receipt{}, errors.New("artifact egress is disabled by configuration")
 	}
 	if root == nil {
 		return nil, Receipt{}, errors.New("artifact export requires an active workspace")
+	}
+	if owner != nil {
+		if owner.Conversation == "" || owner.Group == "" || owner.Repository == "" ||
+			owner.Fingerprint == "" || owner.BindingEpoch == "" ||
+			owner.ProjectRoot != root.Path() {
+			return nil, Receipt{}, errors.New("artifact owner must identify the validated conversation and source checkout epoch")
+		}
 	}
 	rel = strings.TrimSpace(rel)
 	if rel == "" {
@@ -127,6 +153,11 @@ func (s *Store) Export(root *workspace.Root, rel string) (*mcp.ResourceLink, Rec
 		CreatedAt:      time.Now().UTC().Format(time.RFC3339Nano),
 		SourceRoot:     root.Path(),
 		SourceRelative: relative,
+	}
+	if owner != nil {
+		copyOwner := *owner
+		rec.Owner = &copyOwner
+		rec.Version = 2
 	}
 	durable := int64(len(data)) <= s.cfg.SnapshotMaxFileBytes &&
 		int64(len(data)) <= s.cfg.MaxSnapshotBytes &&
@@ -183,6 +214,23 @@ func (s *Store) Export(root *workspace.Root, rel string) (*mcp.ResourceLink, Rec
 }
 
 func (s *Store) Read(uri string) (*mcp.ReadResourceResult, error) {
+	return s.ReadScoped(uri, nil)
+}
+
+// ReadScoped never discloses a grouped artifact unless the caller proves the
+// original conversation/group/member/checkout binding. A raw resource URI is
+// deliberately insufficient for grouped exports.
+func (s *Store) ReadScoped(uri string, caller *Owner) (*mcp.ReadResourceResult, error) {
+	return s.ReadAuthorized(uri, func(recorded Owner) bool {
+		return caller != nil && *caller == recorded
+	})
+}
+
+// ReadAuthorized validates a resource's owner within the same locked record
+// read that serves its bytes. The callback must independently authenticate
+// and revalidate the member binding at request time; it must not trust URI
+// contents or an alias presented directly by the requester.
+func (s *Store) ReadAuthorized(uri string, authorize func(Owner) bool) (*mcp.ReadResourceResult, error) {
 	if !strings.HasPrefix(uri, Prefix) {
 		return nil, mcp.ResourceNotFoundError(uri)
 	}
@@ -205,6 +253,23 @@ func (s *Store) Read(uri string) (*mcp.ReadResourceResult, error) {
 	var rec record
 	if err := json.Unmarshal(data, &rec); err != nil {
 		return nil, mcp.ResourceNotFoundError(uri)
+	}
+	if rec.Token != token {
+		return nil, mcp.ResourceNotFoundError(uri)
+	}
+	if rec.Owner != nil {
+		if authorize == nil || !authorize(*rec.Owner) {
+			return nil, mcp.ResourceNotFoundError(uri)
+		}
+		// Group snapshots, unlike legacy durable exports, have a bounded
+		// lifetime. This applies equally to blobs and source fallbacks.
+		if s.groupRecordExpired(rec) {
+			_ = os.Remove(s.recordPath(token))
+			if rec.Snapshot != "" {
+				_ = os.Remove(filepath.Join(s.root, filepath.Base(rec.Snapshot)))
+			}
+			return nil, mcp.ResourceNotFoundError(uri)
+		}
 	}
 	var body []byte
 	if rec.Snapshot != "" {
@@ -263,6 +328,13 @@ func (s *Store) pruneLocked(incoming int64, durable bool) error {
 		if json.Unmarshal(data, &rec) != nil {
 			continue
 		}
+		if s.groupRecordExpired(rec) {
+			_ = os.Remove(path)
+			if rec.Snapshot != "" {
+				_ = os.Remove(filepath.Join(s.root, filepath.Base(rec.Snapshot)))
+			}
+			continue
+		}
 		when, _ := time.Parse(time.RFC3339Nano, rec.CreatedAt)
 		records = append(records, item{rec: rec, path: path, when: when})
 		if rec.Snapshot != "" {
@@ -300,6 +372,15 @@ func (s *Store) pruneLocked(incoming int64, durable bool) error {
 		}
 	}
 	return nil
+}
+
+func (s *Store) groupRecordExpired(rec record) bool {
+	if rec.Owner == nil {
+		return false
+	}
+	created, err := time.Parse(time.RFC3339Nano, rec.CreatedAt)
+	return err != nil || s.cfg.ReferenceTTL.Duration() <= 0 ||
+		time.Since(created) > s.cfg.ReferenceTTL.Duration()
 }
 
 func readBounded(path string, max int64) ([]byte, error) {

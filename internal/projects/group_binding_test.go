@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/benice2me11/codexify-go/internal/workspace"
 )
 
 func TestGroupBindingV3PersistsActiveAndExplicitRouting(t *testing.T) {
@@ -158,7 +160,11 @@ func TestGroupBindingManagedCheckoutDoesNotChangeSources(t *testing.T) {
 		t.Fatalf("explicit managed member was not isolated: %+v", hh)
 	}
 	work, _ := boundGroupMember(Binding{Repositories: selected.Repositories}, "work")
-	if work.ManagedWorktree || !sameGroupPath(work.ProjectRoot, filepath.Join(root, "work-search")) {
+	wantSourceRoot, err := workspace.Canonical(filepath.Join(root, "work-search"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if work.ManagedWorktree || !sameGroupPath(work.ProjectRoot, wantSourceRoot) {
 		t.Fatalf("source member unexpectedly moved: %+v", work)
 	}
 	if _, err := os.Stat(filepath.Join(hh.SourceProjectRoot, "README.md")); err != nil {

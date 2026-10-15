@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/benice2me11/codexify-go/internal/workspace"
 	"golang.org/x/sys/windows"
 )
 
@@ -20,7 +21,11 @@ func TestGroupRegistryWindowsExtendedPathIdentity(t *testing.T) {
 		t.Fatalf("valid extended-path spelling rejected: %v", err)
 	}
 	resolved, err := manager.ResolveProjectGroupSource("job-search", "work")
-	if err != nil || !sameGroupPath(resolved.Member.SourceProjectRoot, filepath.Join(root, "work-search")) {
+	want, canonicalErr := workspace.Canonical(filepath.Join(root, "work-search"))
+	if canonicalErr != nil {
+		t.Fatal(canonicalErr)
+	}
+	if err != nil || !sameGroupPath(resolved.Member.SourceProjectRoot, want) {
 		t.Fatalf("extended path resolved incorrectly: %+v, %v", resolved.Member, err)
 	}
 }
@@ -47,7 +52,11 @@ func TestGroupRegistryWindowsShortNameAlias(t *testing.T) {
 		t.Fatalf("valid short-name alias should canonicalize: %v", err)
 	}
 	resolved, err := manager.ResolveProjectGroupSource("job-search", "work")
-	if err != nil || !sameGroupPath(resolved.Member.SourceProjectRoot, long) {
+	want, canonicalErr := workspace.Canonical(long)
+	if canonicalErr != nil {
+		t.Fatal(canonicalErr)
+	}
+	if err != nil || !sameGroupPath(resolved.Member.SourceProjectRoot, want) {
 		t.Fatalf("8.3 source identity mismatch: %+v, %v", resolved.Member, err)
 	}
 }

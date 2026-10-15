@@ -175,7 +175,11 @@ func TestGroupRegistryFailClosedWhenFeatureDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("legacy project Select regressed: %v", err)
 	}
-	if info.ManagedWorktree || info.Mode != "project" || info.ProjectRoot != filepath.Join(root, "work-search") {
+	wantRoot, err := workspace.Canonical(filepath.Join(root, "work-search"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.ManagedWorktree || info.Mode != "project" || !sameGroupPath(info.ProjectRoot, wantRoot) {
 		t.Fatalf("legacy project behavior changed: %+v", info)
 	}
 }

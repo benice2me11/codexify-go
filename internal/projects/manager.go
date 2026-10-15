@@ -16,6 +16,7 @@ import (
 type Manager struct {
 	cfg    config.MCPConfig
 	access *workspace.Root
+	groups *GroupRegistry
 	mu     sync.Mutex
 
 	transientMu       sync.RWMutex
@@ -75,9 +76,14 @@ func New(cfg config.MCPConfig) (*Manager, error) {
 	if strings.TrimSpace(cfg.Worktrees.Mode) == "" {
 		cfg.Worktrees.Mode = "auto"
 	}
+	groups, err := NewGroupRegistry(access, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("initialize project groups: %w", err)
+	}
 	return &Manager{
 		cfg:               cfg,
 		access:            access,
+		groups:            groups,
 		transientBindings: make(map[string]Binding),
 		transientChanges:  make(map[string]WorkspaceChange),
 		transientHistory:  make(map[string][]Binding),
@@ -86,6 +92,16 @@ func New(cfg config.MCPConfig) (*Manager, error) {
 
 func (m *Manager) AccessRoot() *workspace.Root {
 	return m.access
+}
+
+// ListProjectGroups is catalog-only: group selection and conversation
+// persistence are implemented separately in the v3 binding stage.
+func (m *Manager) ListProjectGroups() []GroupDefinition {
+	return m.groups.List()
+}
+
+func (m *Manager) ResolveProjectGroupSource(groupName, alias string) (ResolvedGroupSource, error) {
+	return m.groups.ResolveSource(groupName, alias)
 }
 
 func (m *Manager) Status(meta map[string]any) (StatusInfo, error) {

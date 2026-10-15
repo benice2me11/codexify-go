@@ -59,18 +59,20 @@ type ServiceConfig struct {
 }
 
 type MCPConfig struct {
-	WorkspaceRoot       string               `json:"workspaceRoot"`
-	AuthEnabled         bool                 `json:"authEnabled"`
-	MaxRequestBodyBytes int64                `json:"maxRequestBodyBytes"`
-	MultiProject        bool                 `json:"multiProject"`
-	BindingsDir         string               `json:"bindingsDir,omitempty"`
-	CloneDir            string               `json:"cloneDir,omitempty"`
-	ScratchDir          string               `json:"scratchDir,omitempty"`
-	ProjectScanDepth    int                  `json:"projectScanDepth,omitempty"`
-	Worktrees           WorktreeConfig       `json:"worktrees"`
-	Projects            []ProjectSpec        `json:"projects,omitempty"`
-	Upstreams           []UpstreamMCPConfig  `json:"upstreams,omitempty"`
-	Diagnostics         MCPDiagnosticsConfig `json:"diagnostics"`
+	WorkspaceRoot        string               `json:"workspaceRoot"`
+	AuthEnabled          bool                 `json:"authEnabled"`
+	MaxRequestBodyBytes  int64                `json:"maxRequestBodyBytes"`
+	MultiProject         bool                 `json:"multiProject"`
+	ProjectGroupsEnabled bool                 `json:"projectGroupsEnabled,omitempty"`
+	BindingsDir          string               `json:"bindingsDir,omitempty"`
+	CloneDir             string               `json:"cloneDir,omitempty"`
+	ScratchDir           string               `json:"scratchDir,omitempty"`
+	ProjectScanDepth     int                  `json:"projectScanDepth,omitempty"`
+	Worktrees            WorktreeConfig       `json:"worktrees"`
+	Projects             []ProjectSpec        `json:"projects,omitempty"`
+	ProjectGroups        []ProjectGroupSpec   `json:"projectGroups,omitempty"`
+	Upstreams            []UpstreamMCPConfig  `json:"upstreams,omitempty"`
+	Diagnostics          MCPDiagnosticsConfig `json:"diagnostics"`
 }
 
 // MCPDiagnosticsConfig is opt-in and never enables a tunnel or changes routing.
@@ -90,6 +92,20 @@ type ProjectSpec struct {
 	Path        string `json:"path"`
 	Name        string `json:"name,omitempty"`
 	Description string `json:"description,omitempty"`
+}
+
+// Project groups only reference explicitly configured projects. Discovery
+// results never grant new group membership.
+type ProjectGroupSpec struct {
+	Name         string                   `json:"name"`
+	Primary      string                   `json:"primary"`
+	Repositories []ProjectGroupRepository `json:"repositories"`
+}
+
+type ProjectGroupRepository struct {
+	Alias    string `json:"alias"`
+	Project  string `json:"project"`
+	Checkout string `json:"checkout"` // source or managed; never inferred from auto
 }
 
 type UpstreamMCPConfig struct {
@@ -460,6 +476,9 @@ func (c Config) Validate() error {
 	}
 	if c.MCP.ProjectScanDepth < 0 || c.MCP.ProjectScanDepth > 8 {
 		errs = append(errs, errors.New("mcp.projectScanDepth must be between 0 and 8"))
+	}
+	if err := ValidateProjectGroups(c.MCP); err != nil {
+		errs = append(errs, err)
 	}
 	switch strings.ToLower(c.MCP.Worktrees.Mode) {
 	case "auto", "always", "never":

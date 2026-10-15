@@ -51,6 +51,7 @@ while([DateTimeOffset]::UtcNow -lt $deadline) {
         if($serviceUnavailable){$consecutive++}else{$consecutive=0}
         $snapshot=[pscustomobject]@{
             ServiceState=[string]$service.State
+            GoOwners=$goOwners.Count
             GoSupervisors=$supervisor.Count;Workers=$workers.Count
             Tunnels=$tunnels.Count;RustCount=$rustOwners.Count
             ImageMatchesExpected=$imageMatches

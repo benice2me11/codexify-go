@@ -416,8 +416,8 @@ func TestUIResourcesAndToolMetadata(t *testing.T) {
 	if len(setup.Contents) != 1 || setup.Contents[0].MIMEType != ui.MIMEType || !strings.Contains(setup.Contents[0].Text, "setup_status") {
 		t.Fatalf("unexpected setup UI resource: %+v", setup.Contents)
 	}
-	if ui.SetupURI == ui.LegacySetupURI {
-		t.Fatal("new setup resource URI must differ from the legacy cached URI")
+	if ui.SetupURI == ui.LegacySetupURI || ui.SetupURI == ui.LegacyLinuxSetupURI || ui.LegacySetupURI == ui.LegacyLinuxSetupURI {
+		t.Fatal("Setup v1/v2/v3 resource URIs must be distinct")
 	}
 	legacy, err := session.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: ui.LegacySetupURI})
 	if err != nil {
@@ -425,6 +425,13 @@ func TestUIResourcesAndToolMetadata(t *testing.T) {
 	}
 	if len(legacy.Contents) != 1 || legacy.Contents[0].Text != setup.Contents[0].Text {
 		t.Fatal("legacy Setup card must render current compatible HTML")
+	}
+	linuxLegacy, err := session.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: ui.LegacyLinuxSetupURI})
+	if err != nil {
+		t.Fatalf("cached Linux v1 Setup cards must remain readable: %v", err)
+	}
+	if len(linuxLegacy.Contents) != 1 || linuxLegacy.Contents[0].MIMEType != ui.MIMEType || linuxLegacy.Contents[0].Text != setup.Contents[0].Text {
+		t.Fatal("legacy Linux Setup v1 card must render the same compatible HTML as Setup v3")
 	}
 	diff, err := session.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: ui.DiffURI})
 	if err != nil {

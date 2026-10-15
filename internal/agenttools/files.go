@@ -21,16 +21,27 @@ type Files struct {
 	Root *workspace.Root
 }
 
+// RepositoryContext identifies which group checkout actually serviced a
+// routed tool call. Absent in legacy single-project responses.
+type RepositoryContext struct {
+	Alias             string `json:"alias"`
+	SourceProjectRoot string `json:"sourceProjectRoot"`
+	ProjectRoot       string `json:"projectRoot"`
+	Checkout          string `json:"checkout"`
+}
+
 type ReadFileInput struct {
-	Path   string `json:"path" jsonschema:"workspace-relative file path"`
-	Offset int    `json:"offset,omitempty" jsonschema:"zero-based first line"`
-	Limit  int    `json:"limit,omitempty" jsonschema:"maximum lines to return; default 200"`
+	Repository string `json:"repository,omitempty" jsonschema:"optional project-group repository alias; defaults to active repository"`
+	Path       string `json:"path" jsonschema:"workspace-relative file path"`
+	Offset     int    `json:"offset,omitempty" jsonschema:"zero-based first line"`
+	Limit      int    `json:"limit,omitempty" jsonschema:"maximum lines to return; default 200"`
 }
 
 type ReadFileOutput struct {
-	Path       string `json:"path"`
-	Content    string `json:"content"`
-	NextOffset *int   `json:"nextOffset,omitempty"`
+	Repository *RepositoryContext `json:"repository,omitempty"`
+	Path       string             `json:"path"`
+	Content    string             `json:"content"`
+	NextOffset *int               `json:"nextOffset,omitempty"`
 }
 
 func (f *Files) ReadFile(in ReadFileInput) (ReadFileOutput, error) {
@@ -94,13 +105,15 @@ func (f *Files) ReadFile(in ReadFileInput) (ReadFileOutput, error) {
 }
 
 type WriteFileInput struct {
-	Path    string `json:"path" jsonschema:"workspace-relative destination path"`
-	Content string `json:"content" jsonschema:"complete replacement UTF-8 text content"`
+	Repository string `json:"repository,omitempty" jsonschema:"optional project-group repository alias"`
+	Path       string `json:"path" jsonschema:"workspace-relative destination path"`
+	Content    string `json:"content" jsonschema:"complete replacement UTF-8 text content"`
 }
 
 type WriteFileOutput struct {
-	Path  string `json:"path"`
-	Bytes int    `json:"bytes"`
+	Repository *RepositoryContext `json:"repository,omitempty"`
+	Path       string             `json:"path"`
+	Bytes      int                `json:"bytes"`
 }
 
 func (f *Files) WriteFile(in WriteFileInput) (WriteFileOutput, error) {
@@ -122,12 +135,14 @@ func (f *Files) WriteFile(in WriteFileInput) (WriteFileOutput, error) {
 }
 
 type GlobInput struct {
-	Pattern string `json:"pattern" jsonschema:"glob pattern, supports double-star recursion"`
-	Path    string `json:"path,omitempty" jsonschema:"optional workspace-relative base directory"`
+	Repository string `json:"repository,omitempty" jsonschema:"optional project-group repository alias"`
+	Pattern    string `json:"pattern" jsonschema:"glob pattern, supports double-star recursion"`
+	Path       string `json:"path,omitempty" jsonschema:"optional workspace-relative base directory"`
 }
 
 type GlobOutput struct {
-	Matches []string `json:"matches"`
+	Repository *RepositoryContext `json:"repository,omitempty"`
+	Matches    []string           `json:"matches"`
 }
 
 func (f *Files) Glob(in GlobInput) (GlobOutput, error) {
@@ -159,6 +174,16 @@ func (f *Files) Glob(in GlobInput) (GlobOutput, error) {
 	baseRel, _ := f.Root.Relative(base)
 	out := make([]string, 0, len(matches))
 	for _, match := range matches {
+		// os.DirFS and glob libraries do not constitute a security boundary:
+		// every discovered path must pass the same canonical containment
+		// check as read_file before it can be disclosed to the caller.
+		matched, err := f.Root.Resolve(filepath.Join(baseRel, filepath.FromSlash(match)), false)
+		if err != nil {
+			return GlobOutput{}, fmt.Errorf("glob result escapes selected repository: %w", err)
+		}
+		if _, err := f.Root.Relative(matched); err != nil {
+			return GlobOutput{}, err
+		}
 		if baseRel == "." {
 			out = append(out, filepath.ToSlash(match))
 		} else {
@@ -169,6 +194,7 @@ func (f *Files) Glob(in GlobInput) (GlobOutput, error) {
 }
 
 type GrepInput struct {
+	Repository string `json:"repository,omitempty" jsonschema:"optional project-group repository alias"`
 	Pattern    string `json:"pattern" jsonschema:"RE2 regular expression"`
 	Path       string `json:"path,omitempty" jsonschema:"workspace-relative file or directory"`
 	Glob       string `json:"glob,omitempty" jsonschema:"optional file glob filter"`
@@ -182,8 +208,9 @@ type GrepMatch struct {
 }
 
 type GrepOutput struct {
-	Matches   []GrepMatch `json:"matches"`
-	Truncated bool        `json:"truncated"`
+	Repository *RepositoryContext `json:"repository,omitempty"`
+	Matches    []GrepMatch        `json:"matches"`
+	Truncated  bool               `json:"truncated"`
 }
 
 func (f *Files) Grep(in GrepInput) (GrepOutput, error) {

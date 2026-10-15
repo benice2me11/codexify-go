@@ -26,6 +26,19 @@ type StartInput struct {
 	Shell   string
 	Workdir string
 	Yield   time.Duration
+	Owner   Owner
+}
+
+// Owner identifies the conversation and immutable checkout that launched a
+// command. A working directory is not an OS sandbox, but possession of a
+// session ID must never grant a different conversation stdin/process control.
+type Owner struct {
+	Conversation string
+	Group        string
+	Repository   string
+	Root         string
+	Fingerprint  string
+	BindingEpoch string
 }
 
 type Result struct {
@@ -66,6 +79,7 @@ func (m *Manager) Start(in StartInput) (Result, error) {
 		cmd:   cmd,
 		stdin: stdin,
 		done:  make(chan error, 1),
+		owner: in.Owner,
 	}
 	cmd.Stdout = s
 	cmd.Stderr = s
@@ -93,6 +107,37 @@ func (m *Manager) Write(id, chars string, yield time.Duration) (Result, error) {
 	if s == nil {
 		return Result{}, fmt.Errorf("unknown session %q", id)
 	}
+	if s.owner.Conversation != "" {
+		return Result{}, errors.New("owned session requires owner-scoped write")
+	}
+	return m.writeSession(s, chars, yield)
+}
+
+// OwnerFor returns session metadata only to its original conversation.
+// The MCP layer must revalidate the bound repository before WriteOwned.
+func (m *Manager) OwnerFor(id, conversation string) (Owner, error) {
+	m.mu.Lock()
+	s := m.sessions[id]
+	m.mu.Unlock()
+	if s == nil || strings.TrimSpace(conversation) == "" || s.owner.Conversation != conversation {
+		return Owner{}, errors.New("unknown or foreign exec session")
+	}
+	return s.owner, nil
+}
+
+// WriteOwned prevents foreign conversations and changed checkout bindings
+// from using a session identifier, even when they know its random ID.
+func (m *Manager) WriteOwned(id string, owner Owner, chars string, yield time.Duration) (Result, error) {
+	m.mu.Lock()
+	s := m.sessions[id]
+	m.mu.Unlock()
+	if s == nil || owner.Conversation == "" || s.owner != owner {
+		return Result{}, errors.New("unknown or foreign exec session")
+	}
+	return m.writeSession(s, chars, yield)
+}
+
+func (m *Manager) writeSession(s *session, chars string, yield time.Duration) (Result, error) {
 	if chars == "\x03" {
 		if err := stopProcessTree(s.cmd.Process.Pid); err != nil {
 			select {
@@ -156,6 +201,7 @@ type session struct {
 	cmd   *exec.Cmd
 	stdin io.WriteCloser
 	done  chan error
+	owner Owner
 
 	mu        sync.Mutex
 	output    strings.Builder
@@ -253,6 +299,23 @@ func (m *Manager) Stop(ctx context.Context, id string) error {
 	if s == nil {
 		return fmt.Errorf("unknown session %q", id)
 	}
+	if s.owner.Conversation != "" {
+		return errors.New("owned session requires owner-scoped stop")
+	}
+	return stopSession(ctx, s)
+}
+
+func (m *Manager) StopOwned(ctx context.Context, id string, owner Owner) error {
+	m.mu.Lock()
+	s := m.sessions[id]
+	m.mu.Unlock()
+	if s == nil || owner.Conversation == "" || s.owner != owner {
+		return errors.New("unknown or foreign exec session")
+	}
+	return stopSession(ctx, s)
+}
+
+func stopSession(ctx context.Context, s *session) error {
 	done := make(chan error, 1)
 	go func() { done <- stopProcessTree(s.cmd.Process.Pid) }()
 	select {

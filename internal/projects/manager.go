@@ -46,6 +46,7 @@ type WorkspaceInfo struct {
 	MembershipFingerprint string                   `json:"membershipFingerprint,omitempty"`
 	Repositories          []GroupBindingRepository `json:"repositories,omitempty"`
 	Generation            uint64                   `json:"generation,omitempty"`
+	BindingEpoch          string                   `json:"bindingEpoch,omitempty"`
 }
 
 type StatusInfo struct {
@@ -102,8 +103,7 @@ func (m *Manager) AccessRoot() *workspace.Root {
 	return m.access
 }
 
-// ListProjectGroups is catalog-only: group selection and conversation
-// persistence are implemented separately in the v3 binding stage.
+// ListProjectGroups is catalog-only and never changes the conversation.
 func (m *Manager) ListProjectGroups() []GroupDefinition {
 	return m.groups.List()
 }
@@ -421,6 +421,7 @@ func infoFromBinding(m *Manager, binding Binding, newly bool) WorkspaceInfo {
 		info.Repositories = append([]GroupBindingRepository(nil), binding.Repositories...)
 		info.Generation = binding.Generation
 	}
+	info.BindingEpoch = binding.CreatedAt
 	return info
 }
 

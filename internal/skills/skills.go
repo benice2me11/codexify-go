@@ -131,10 +131,11 @@ func (r *Reader) List(workDir string) (Catalog, error) {
 }
 
 type ReadInput struct {
-	Name     string `json:"name"`
-	Resource string `json:"resource,omitempty"`
-	Offset   int    `json:"offset,omitempty"`
-	Limit    int    `json:"limit,omitempty"`
+	Repository string `json:"repository,omitempty"`
+	Name       string `json:"name"`
+	Resource   string `json:"resource,omitempty"`
+	Offset     int    `json:"offset,omitempty"`
+	Limit      int    `json:"limit,omitempty"`
 }
 
 type ReadOutput struct {

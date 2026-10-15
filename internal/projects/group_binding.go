@@ -11,9 +11,9 @@ import (
 	"github.com/benice2me11/codexify-go/internal/workspace"
 )
 
-// SelectGroup creates one version-3 conversation binding. It does not expose a
-// new MCP tool yet: discovery/schema and per-call routing must be introduced
-// together in the next stage rather than advertising partially routed tools.
+// SelectGroup creates one version-3 conversation binding. The MCP runtime
+// exposes this only when projectGroupsEnabled is explicitly enabled and the
+// repository-aware tool schemas are registered.
 func (m *Manager) SelectGroup(meta map[string]any, name string) (WorkspaceInfo, error) {
 	if !m.cfg.ProjectGroupsEnabled || !m.cfg.MultiProject {
 		return WorkspaceInfo{}, errors.New("project groups are disabled")

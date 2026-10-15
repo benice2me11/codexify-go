@@ -3,7 +3,7 @@ Import-Module (Join-Path $PSScriptRoot 'GoOnlyUpgrade.psm1') -Force
 function Assert($value,[string]$message){if(!$value){throw $message}}
 
 $base=[pscustomobject]@{
-    ServiceState='Running';GoSupervisors=1;Workers=1;Tunnels=1
+    ServiceState='Running';GoOwners=2;GoSupervisors=1;Workers=1;Tunnels=1
     RustCount=0;ImageMatchesExpected=$true
     Http403=0;Http429=0;Http503=0;PollFailures=0
 }
@@ -25,11 +25,18 @@ Assert ($tunnel.Action -eq 'HOLD' -and !$tunnel.Recovery) 'tunnel-child self-hea
 
 $noWorker=$base.PSObject.Copy()
 $noWorker.Workers=0
+$noWorker.GoOwners=1
 Assert ((Get-GoTrialDecision -Snapshot $noWorker).Action -eq 'HOLD') 'worker self-healing'
+
+$duplicateGo=$base.PSObject.Copy()
+$duplicateGo.GoOwners=3
+$duplicateDecision=Get-GoTrialDecision -Snapshot $duplicateGo -ConsecutiveServiceFailures 99
+Assert ($duplicateDecision.Action -eq 'BLOCKED' -and $duplicateDecision.Reason -eq 'duplicate_go_processes' -and !$duplicateDecision.Recovery) 'extra Go owner cannot silently pass or trigger recovery'
 
 $serviceDown=$base.PSObject.Copy()
 $serviceDown.ServiceState='Stopped'
 $serviceDown.GoSupervisors=0
+$serviceDown.GoOwners=0
 Assert ((Get-GoTrialDecision -Snapshot $serviceDown -ConsecutiveServiceFailures 5).Action -eq 'HOLD') 'early stoppage'
 $d=Get-GoTrialDecision -Snapshot $serviceDown -ConsecutiveServiceFailures 6
 Assert ($d.Action -eq 'RECOVER_GO' -and $d.Recovery) 'confirmed Go service unavailability'

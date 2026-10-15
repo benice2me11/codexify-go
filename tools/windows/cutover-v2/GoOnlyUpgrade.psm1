@@ -17,6 +17,12 @@ function Get-GoTrialDecision {
     if (-not [bool]$Snapshot.ImageMatchesExpected) {
         return [pscustomobject]@{Action='BLOCKED';Reason='unexpected_scm_image';Recovery=$false}
     }
+    # An orphaned or duplicate Go process using the service image makes the
+    # ownership topology ambiguous. Do not attempt Go recovery or mark G10
+    # healthy until an operator can identify the extra owner.
+    if ([int]$Snapshot.GoOwners -gt 2) {
+        return [pscustomobject]@{Action='BLOCKED';Reason='duplicate_go_processes';Recovery=$false}
+    }
     if ([string]$Snapshot.ServiceState -ne 'Running' -or [int]$Snapshot.GoSupervisors -ne 1) {
         if ($ConsecutiveServiceFailures -ge $RecoveryThreshold) {
             return [pscustomobject]@{Action='RECOVER_GO';Reason='go_supervisor_unavailable';Recovery=$true}

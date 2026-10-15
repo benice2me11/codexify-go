@@ -1,11 +1,25 @@
 # Windows G10 Go-to-Go transactional upgrade protocol — 2026-10-15
 
-**Status:** operator code and offline tests prepared; no production switch recorded in this document.
-**Current owner:** Go Windows SCM service, Rust service and watchdog disabled.
+**Status:** **GO_UPGRADED / G10_RUNNING_NOT_ACCEPTED**. Independent live SCM switch completed 2026-10-15 at 13:26 Moscow time.
+**Current owner:** Setup v3 Go Windows SCM service; previous Go is preserved for Go-only recovery; Rust service and watchdog remain disabled.
 **Original frozen live binary:** SHA-256 B908C8DE5BB5526BCFEFC69AAF631A9189963A8BBB1EC08AFD380495BF10F387.
 **New Setup v3 candidate:** commit cdf8c98, SHA-256 8BAA786E6BEFDCE5C746419B5A9277D3531A824938396DF8DDDA3FB7200B5880.
 
 PRs #7–#10 brought Windows path identity, explicit checkout UI, G03 tunnel self-heal and verified Setup context into main. PRs #11–#12 added offline diagnostics and compiled-binary smoke. The later commits add diagnostics/tests, not binary-affecting source.
+
+## Live result — 2026-10-15
+
+- Operator source: PR #14, merged into main at `1536b7737f69cebe3bd2013a20f0ada784512ffb`. Windows CI (Go test/vet, PowerShell fixtures, native build, compiled Setup v3 smoke, race and cross-build) PASS.
+- Independent on-demand Task Scheduler job: `CodexifyGo-GoUpgrade-20261015`, Interactive/Highest, first PLAN_ONLY result 0, then separately armed and started with Execute. This task was not owned by the Go worker.
+- Operator start: 2026-10-15T10:26:30Z. Sequence in operator-events.jsonl: independent_task_started, old_rust_capable_watcher_disabled, scm_image_switched, new_go_supervisor_worker_tunnel_ready, go_only_watcher_ready, old_observers_retired, go_upgrade_transaction_completed — **all PASS**.
+- Durable transaction result: **GO_UPGRADED** in `upgrade-result.json`. Previous-Go recovery was not required. Old Go executable/config and old G10 task XML backup remain available in their previous paths and the transaction folder.
+- Live Go supervisor PID initially **18952**, started at 13:26:30 Moscow; one Go worker child and one tunnel child, zero Rust processes. Running service executable SHA-256 equals the staged Setup v3 candidate exactly. Original profile SHA-256 remains `47DF2D446BAF84D9DC9CE0243AFD79A22B803525884BFB94E6D3D79B6B03830D`.
+- Old Rust-capable rollback-watcher count **0**. `CodexifyGo-G10Observers` now runs the new `Watch-GoTrial.ps1` with its original BootTrigger and **without ArmRollback/Watch-Cutover**. Go-only watcher count **1**; both Rust Scheduled Tasks disabled.
+- New G10 evidence at private `C:\Users\FoxOS_User\.codexify-go\cutover-v2\20261015T101000Z-go-only-upgrade\evidence`. At 13:30:31 Moscow: **24/24 guard samples CONTINUE/within_limits**, 24 local samples, 4 metric samples, guard age 2 seconds, CPU sample ~4%, 2 Go processes, 1 tunnel, 0 Rust.
+- After reconnection, this same ChatGPT conversation retained `workspaceRoot=C:\Users\FoxOS_User\codexify-go`, `managedWorktree=false`. A fresh setup call reported schema **0.8.2-dev+workspace-v1+setup-v3+artifact-ingress-v1**, status **current**, `conversationStale=false`.
+- Read-only upstream smoke: `mcp_list_sources` returned `hh_local`, `habr_career` and `node_repl`; `hh_local.get_my_resumes` and `habr_career.habr_whoami` returned without upstream MCP errors. No vacancy application or HH mutation was sent.
+
+**Still pending:** user-side visual check of the rendered Setup v3 picker, later boot/reconnect acceptance, full 24-hour G10 coverage and the original workload/quiet-window thresholds, then G11. Do not mark G10 PASS merely from the short successful live smoke; record any later unexplained restart or monitoring gap as a blocker.
 
 ## Topology and safety
 

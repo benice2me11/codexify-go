@@ -14,23 +14,39 @@ import (
 
 const (
 	bindingVersion       = 2
+	groupBindingVersion  = 3
 	legacyBindingVersion = 1
 )
 
-type Binding struct {
-	Version           int    `json:"version"`
-	IdentityHash      string `json:"identityHash"`
-	Scope             string `json:"bindingScope,omitempty"`
-	Mode              string `json:"mode,omitempty"`
+type GroupBindingRepository struct {
+	Alias             string `json:"alias"`
 	SourceProjectRoot string `json:"sourceProjectRoot"`
 	ProjectRoot       string `json:"projectRoot"`
-	RepositoryURL     string `json:"repositoryUrl,omitempty"`
-	CheckoutCommit    string `json:"checkoutCommit,omitempty"`
-	Cloned            bool   `json:"cloned,omitempty"`
+	Checkout          string `json:"checkout"`
 	ManagedWorktree   bool   `json:"managedWorktree"`
 	WorktreeGitRoot   string `json:"worktreeGitRoot,omitempty"`
-	WorktreesRoot     string `json:"worktreesRoot,omitempty"`
-	CreatedAt         string `json:"createdAt"`
+}
+
+type Binding struct {
+	Version               int                      `json:"version"`
+	IdentityHash          string                   `json:"identityHash"`
+	Scope                 string                   `json:"bindingScope,omitempty"`
+	Mode                  string                   `json:"mode,omitempty"`
+	SourceProjectRoot     string                   `json:"sourceProjectRoot"`
+	ProjectRoot           string                   `json:"projectRoot"`
+	RepositoryURL         string                   `json:"repositoryUrl,omitempty"`
+	CheckoutCommit        string                   `json:"checkoutCommit,omitempty"`
+	Cloned                bool                     `json:"cloned,omitempty"`
+	ManagedWorktree       bool                     `json:"managedWorktree"`
+	WorktreeGitRoot       string                   `json:"worktreeGitRoot,omitempty"`
+	WorktreesRoot         string                   `json:"worktreesRoot,omitempty"`
+	GroupName             string                   `json:"groupName,omitempty"`
+	PrimaryRepository     string                   `json:"primaryRepository,omitempty"`
+	ActiveRepository      string                   `json:"activeRepository,omitempty"`
+	MembershipFingerprint string                   `json:"membershipFingerprint,omitempty"`
+	Repositories          []GroupBindingRepository `json:"repositories,omitempty"`
+	Generation            uint64                   `json:"generation,omitempty"`
+	CreatedAt             string                   `json:"createdAt"`
 }
 
 func (m *Manager) readBinding(identity *Identity) (*Binding, error) {
@@ -44,8 +60,8 @@ func (m *Manager) readBinding(identity *Identity) (*Binding, error) {
 		if !ok {
 			return nil, nil
 		}
-		if _, err := os.Stat(binding.ProjectRoot); err != nil {
-			return nil, fmt.Errorf("bound project is no longer available: %w", err)
+		if err := m.validateBoundWorkspace(&binding); err != nil {
+			return nil, err
 		}
 		copyBinding := binding
 		return &copyBinding, nil
@@ -65,8 +81,8 @@ func (m *Manager) readBinding(identity *Identity) (*Binding, error) {
 	if binding.IdentityHash != identity.Key {
 		return nil, errors.New("project binding identity/version mismatch")
 	}
-	if _, err := os.Stat(binding.ProjectRoot); err != nil {
-		return nil, fmt.Errorf("bound project is no longer available: %w", err)
+	if err := m.validateBoundWorkspace(binding); err != nil {
+		return nil, err
 	}
 	return binding, nil
 }
@@ -114,7 +130,7 @@ func decodeBinding(data []byte) (*Binding, error) {
 	if err := json.Unmarshal(data, &binding); err != nil {
 		return nil, fmt.Errorf("decode project binding: %w", err)
 	}
-	if binding.Version != bindingVersion && binding.Version != legacyBindingVersion {
+	if binding.Version != bindingVersion && binding.Version != legacyBindingVersion && binding.Version != groupBindingVersion {
 		return nil, fmt.Errorf("unsupported project binding version %d", binding.Version)
 	}
 	if binding.Mode == "" {
@@ -125,6 +141,14 @@ func decodeBinding(data []byte) (*Binding, error) {
 	}
 	if binding.ProjectRoot == "" {
 		return nil, errors.New("project binding is missing projectRoot")
+	}
+	if binding.Version == groupBindingVersion {
+		if binding.Mode != "group" || binding.GroupName == "" || binding.PrimaryRepository == "" ||
+			binding.ActiveRepository == "" || binding.MembershipFingerprint == "" || len(binding.Repositories) == 0 {
+			return nil, errors.New("invalid group binding v3: missing group identity or members")
+		}
+	} else if binding.Mode == "group" {
+		return nil, errors.New("group mode requires binding version 3")
 	}
 	return &binding, nil
 }
@@ -151,10 +175,11 @@ func (m *Manager) sourceInUse(source string, identity *Identity) bool {
 			if identity != nil && binding.IdentityHash == identity.Key {
 				continue
 			}
-			if binding.Mode != "scratch" && cleanComparable(binding.SourceProjectRoot) == source {
-				if _, err := os.Stat(binding.ProjectRoot); err == nil {
-					return true
-				}
+			if binding.Mode == "group" && !m.cfg.ProjectGroupsEnabled {
+				continue
+			}
+			if bindingUsesSource(binding, source) {
+				return true
 			}
 		}
 	}
@@ -164,11 +189,33 @@ func (m *Manager) sourceInUse(source string, identity *Identity) bool {
 		if identity != nil && key == identity.Key {
 			continue
 		}
-		if binding.Mode != "scratch" && cleanComparable(binding.SourceProjectRoot) == source {
-			if _, err := os.Stat(binding.ProjectRoot); err == nil {
-				return true
+		if binding.Mode == "group" && !m.cfg.ProjectGroupsEnabled {
+			continue
+		}
+		if bindingUsesSource(binding, source) {
+			return true
+		}
+	}
+	return false
+}
+
+func bindingUsesSource(binding Binding, comparableSource string) bool {
+	if binding.Mode == "scratch" {
+		return false
+	}
+	if binding.Mode == "group" {
+		for _, member := range binding.Repositories {
+			if cleanComparable(member.SourceProjectRoot) == comparableSource {
+				if _, err := os.Stat(member.ProjectRoot); err == nil {
+					return true
+				}
 			}
 		}
+		return false
+	}
+	if cleanComparable(binding.SourceProjectRoot) == comparableSource {
+		_, err := os.Stat(binding.ProjectRoot)
+		return err == nil
 	}
 	return false
 }

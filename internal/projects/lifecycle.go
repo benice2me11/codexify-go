@@ -101,7 +101,14 @@ func (m *Manager) Switch(meta map[string]any, expectedPath string) (WorkspaceCha
 	if current == nil {
 		return WorkspaceChange{}, errors.New("no workspace is selected")
 	}
-	if expectedPath != "" && cleanComparable(current.ProjectRoot) != cleanComparable(expectedPath) {
+	currentVisibleRoot := current.ProjectRoot
+	if current.Mode == "group" {
+		if member, ok := boundGroupMember(*current, current.ActiveRepository); ok {
+			currentVisibleRoot = member.ProjectRoot
+		}
+	}
+	if expectedPath != "" && cleanComparable(currentVisibleRoot) != cleanComparable(expectedPath) &&
+		cleanComparable(current.ProjectRoot) != cleanComparable(expectedPath) {
 		return WorkspaceChange{}, errors.New("workspace changed since the switch request was prepared")
 	}
 
@@ -120,7 +127,7 @@ func (m *Manager) Switch(meta map[string]any, expectedPath string) (WorkspaceCha
 
 	newChange := WorkspaceChange{
 		Revision:          revision,
-		PreviousRoot:      current.ProjectRoot,
+		PreviousRoot:      currentVisibleRoot,
 		AwaitingSelection: true,
 	}
 	if err := m.writeSwitch(identity, newChange); err != nil {
@@ -233,6 +240,11 @@ func (m *Manager) findSavedBindingByRoot(root string) (*Binding, error) {
 		}
 		binding, err := decodeBinding(data)
 		if err != nil {
+			return nil
+		}
+		// A v3 group is never resumed as a v2 single-project binding merely
+		// because its primary checkout path matches resumePath.
+		if binding.Mode == "group" {
 			return nil
 		}
 		if cleanComparable(binding.ProjectRoot) != cleanComparable(root) {

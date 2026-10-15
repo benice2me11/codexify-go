@@ -28,6 +28,10 @@ jobs:
           cache: true
       - run: go test -count=1 ./...
       - run: go vet ./...
+      - name: G10 offline runtime inspection fixture
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tools/windows/cutover-v2/Test-G10RuntimeInspection.ps1
       - name: Build native binary
         shell: bash
         run: |

@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/benice2me11/codexify-go/internal/config"
+	"github.com/benice2me11/codexify-go/internal/ui"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -485,6 +486,16 @@ func TestProjectGroupMarkdownChatRemainsOnPrimary(t *testing.T) {
 	if second["chat_file"] != firstPath {
 		t.Fatalf("active member changed group chat path: first=%q second=%+v", firstPath, second)
 	}
+	pgCall(t, f, "set_repository_checkout", map[string]any{"repository": "work", "checkout": "managed"})
+	third := pgValue(t, pgCall(t, f, "chat_write", map[string]any{"message": "primary switched to managed"}))
+	if third["chat_file"] != firstPath {
+		t.Fatalf("primary checkout mode switch changed group chat path: first=%q third=%+v", firstPath, third)
+	}
+	pgCall(t, f, "set_repository_checkout", map[string]any{"repository": "work", "checkout": "source"})
+	fourth := pgValue(t, pgCall(t, f, "chat_write", map[string]any{"message": "primary returned to source"}))
+	if fourth["chat_file"] != firstPath {
+		t.Fatalf("primary returned to source but group chat moved: first=%q fourth=%+v", firstPath, fourth)
+	}
 	habrBrief := pgValue(t, pgCall(t, f, "get_agent_brief", map[string]any{"repository": "habr"}))
 	if !strings.Contains(fmt.Sprint(habrBrief), firstPath) {
 		t.Fatalf("member brief did not reference primary group chat: %+v", habrBrief)
@@ -494,7 +505,190 @@ func TestProjectGroupMarkdownChatRemainsOnPrimary(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(data), "primary chat record") ||
-		!strings.Contains(string(data), "another member, same chat") {
+		!strings.Contains(string(data), "another member, same chat") ||
+		!strings.Contains(string(data), "primary switched to managed") ||
+		!strings.Contains(string(data), "primary returned to source") {
 		t.Fatalf("group CHAT.md lost member-independent messages: %s", data)
+	}
+}
+
+func TestProjectGroupMemberModeSwitchViaMCPPreservesDirtyWorktree(t *testing.T) {
+	f := newPGFixture(t)
+	selected := pgValue(t, pgCall(t, f, "set_project_group", map[string]any{
+		"name": "job-search", "checkouts": map[string]string{"hh": "managed", "habr": "source"},
+	}))
+	if selected["mode"] != "group" || selected["activeRepository"] != "work" {
+		t.Fatalf("wrong initial group binding: %+v", selected)
+	}
+	first := pgValue(t, pgCall(t, f, "get_environment", map[string]any{"repository": "hh"}))
+	managed, ok := first["workspaceRoot"].(string)
+	if !ok || managed == "" || first["managedWorktree"] != true {
+		t.Fatalf("HH not selected as managed: %+v", first)
+	}
+	pgCall(t, f, "write_file", map[string]any{
+		"repository": "hh", "path": "dirty-uncommitted.txt", "content": "must survive checkout switches\n",
+	})
+	pgCall(t, f, "set_active_repository", map[string]any{"repository": "habr"})
+	pgCall(t, f, "set_repository_checkout", map[string]any{
+		"repository": "hh", "checkout": "source",
+	})
+	source := pgValue(t, pgCall(t, f, "get_environment", map[string]any{"repository": "hh"}))
+	if source["managedWorktree"] != false || source["workspaceRoot"] == managed {
+		t.Fatalf("source mode not activated: %+v", source)
+	}
+	if _, err := os.Stat(filepath.Join(managed, "dirty-uncommitted.txt")); err != nil {
+		t.Fatalf("managed tree deleted after source switch: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(f.paths["hh"], "dirty-uncommitted.txt")); !os.IsNotExist(err) {
+		t.Fatalf("dirty worktree file copied into source: %v", err)
+	}
+	pgCall(t, f, "set_repository_checkout", map[string]any{
+		"repository": "hh", "checkout": "managed",
+	})
+	returned := pgValue(t, pgCall(t, f, "get_environment", map[string]any{"repository": "hh"}))
+	if returned["workspaceRoot"] != managed || returned["managedWorktree"] != true ||
+		returned["activeRepository"] != "habr" {
+		t.Fatalf("managed checkout not reused with same active default: %+v", returned)
+	}
+	data, err := os.ReadFile(filepath.Join(managed, "dirty-uncommitted.txt"))
+	if err != nil || string(data) != "must survive checkout switches\n" {
+		t.Fatalf("reopened managed checkout lost dirty data: %q %v", data, err)
+	}
+	pgExpectError(t, f, "set_repository_checkout", map[string]any{
+		"repository": "outside", "checkout": "managed",
+	})
+	pgExpectError(t, f, "set_repository_checkout", map[string]any{
+		"repository": "hh", "checkout": "auto",
+	})
+}
+
+func TestProjectGroupCheckoutRevisionRevokesOldArtifactAndExecSession(t *testing.T) {
+	f := newPGFixture(t)
+	pgCall(t, f, "set_project_group", map[string]any{"name": "job-search"})
+	exported := pgCall(t, f, "export_host_file", map[string]any{
+		"repository": "hh", "path": "README.md",
+	})
+	var link *mcp.ResourceLink
+	for _, content := range exported.Content {
+		if resource, ok := content.(*mcp.ResourceLink); ok {
+			link = resource
+			break
+		}
+	}
+	if link == nil {
+		t.Fatal("no group artifact URI")
+	}
+	initial, err := f.session.ReadResource(context.Background(), &mcp.ReadResourceParams{
+		Meta: f.meta, URI: link.URI,
+	})
+	if err != nil || len(initial.Contents) != 1 {
+		t.Fatalf("initial scoped resource inaccessible: %+v %v", initial, err)
+	}
+	command, shell := "echo ready; sleep 5; echo finish", "sh"
+	if runtime.GOOS == "windows" {
+		command, shell = "echo ready & ping -n 9 127.0.0.1 >nul & echo finish", "cmd"
+	}
+	started := pgValue(t, pgCall(t, f, "exec_command", map[string]any{
+		"repository": "hh", "cmd": command, "shell": shell, "yield_time_ms": 30,
+	}))
+	id, _ := started["session_id"].(string)
+	if id == "" {
+		t.Fatalf("long-running owned session missing: %+v", started)
+	}
+	pgCall(t, f, "set_repository_checkout", map[string]any{
+		"repository": "hh", "checkout": "managed",
+	})
+	pgCall(t, f, "set_repository_checkout", map[string]any{
+		"repository": "hh", "checkout": "source",
+	})
+	if _, err := f.session.ReadResource(context.Background(), &mcp.ReadResourceParams{
+		Meta: f.meta, URI: link.URI,
+	}); err == nil {
+		t.Fatal("reopened original checkout revived an old artifact URI")
+	}
+	pgExpectError(t, f, "write_stdin", map[string]any{
+		"session_id": id, "chars": "", "yield_time_ms": 20,
+	})
+}
+
+func TestProjectGroupSetupV4ResourceAndUIContext(t *testing.T) {
+	f := newPGFixture(t)
+	setup := pgCall(t, f, "setup", map[string]any{})
+	status := pgValue(t, pgCall(t, f, "setup_status", map[string]any{}))
+	if status["projectGroupsEnabled"] != true ||
+		!strings.Contains(fmt.Sprint(status["groups"]), "job-search") ||
+		status["connectorVersion"] == "" {
+		t.Fatalf("setup_status missing group capability and catalog: %+v", status)
+	}
+	version, _ := status["connectorVersion"].(string)
+	if version == "" {
+		t.Fatal("group connector version is empty")
+	}
+	if _, err := f.session.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: ui.GroupSetupURI}); err != nil {
+		t.Fatalf("v4 setup resource unavailable: %v", err)
+	}
+	if _, err := f.session.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: ui.SetupURI}); err != nil {
+		t.Fatalf("legacy v3 setup resource compatibility failed: %v", err)
+	}
+	tools, err := f.session.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saw bool
+	for _, item := range tools.Tools {
+		if item.Name == "setup" {
+			if got := item.Meta["ui/resourceUri"]; got != ui.GroupSetupURI {
+				t.Fatalf("enabled group setup must advertise v4 resource, got %#v", got)
+			}
+		}
+		if item.Name == "set_repository_checkout" {
+			saw = true
+			if item.Meta["openai/widgetAccessible"] != true {
+				t.Fatalf("group checkout action is not app-callable: %+v", item.Meta)
+			}
+		}
+	}
+	if !saw {
+		t.Fatal("set_repository_checkout omitted from enabled MCP tool schema")
+	}
+	contextToken, _ := setup.Meta[setupContextMetaKey].(string)
+	if len(contextToken) != 43 {
+		t.Fatalf("host setup did not issue verified UI context: %#v", setup.Meta)
+	}
+	selected, err := f.session.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "set_project_group",
+		Arguments: map[string]any{"uiContext": contextToken, "name": "job-search",
+			"checkouts": map[string]string{"hh": "managed"}},
+	})
+	if err != nil || selected.IsError {
+		t.Fatalf("verified UI group selection rejected: %+v, %v", selected, err)
+	}
+	if _, exists := pgValue(t, pgCall(t, f, "get_project_group_status", nil))["repositories"]; !exists {
+		t.Fatal("verified UI group selection did not persist under current conversation")
+	}
+	changed, err := f.session.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "set_repository_checkout",
+		Arguments: map[string]any{"uiContext": contextToken, "repository": "hh", "checkout": "source"},
+	})
+	if err != nil || changed.IsError {
+		t.Fatalf("verified UI checkout action failed: %+v %v", changed, err)
+	}
+	root := pgValue(t, pgCall(t, f, "get_environment", map[string]any{"repository": "hh"}))
+	if root["managedWorktree"] != false {
+		t.Fatalf("verified checkout UI did not switch hh to source: %+v", root)
+	}
+	foreign, err := f.session.CallTool(context.Background(), &mcp.CallToolParams{
+		Meta:      mcp.Meta{"openai/session": "foreign-ui-context"},
+		Name:      "set_repository_checkout",
+		Arguments: map[string]any{"uiContext": contextToken, "repository": "hh", "checkout": "managed"},
+	})
+	if err == nil && (foreign == nil || !foreign.IsError) {
+		t.Fatalf("foreign conversation reused another workspace card: %+v", foreign)
+	}
+	if root := pgValue(t, pgCall(t, f, "get_environment", map[string]any{"repository": "hh"})); root["managedWorktree"] != false {
+		t.Fatalf("foreign UI changed hh checkout: %+v", root)
+	}
+	if version == ui.SetupURI {
+		t.Fatal("group schema was not versioned separately")
 	}
 }

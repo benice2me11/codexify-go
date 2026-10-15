@@ -44,6 +44,7 @@ func Version(cfg config.Config) string {
 		version += "+setup-v3"
 		if cfg.MCP.ProjectGroupsEnabled {
 			version += "+project-groups-v1"
+			version += "+setup-v4"
 		}
 	}
 	if cfg.ArtifactIngress.Enabled {

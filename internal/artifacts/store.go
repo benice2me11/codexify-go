@@ -44,12 +44,13 @@ type Receipt struct {
 // All fields must originate from validated server-side workspace resolution,
 // never from user-supplied artifact arguments.
 type Owner struct {
-	Conversation string `json:"conversation"`
-	Group        string `json:"group"`
-	Repository   string `json:"repository"`
-	ProjectRoot  string `json:"projectRoot"`
-	Fingerprint  string `json:"membershipFingerprint"`
-	BindingEpoch string `json:"bindingEpoch"`
+	Conversation     string `json:"conversation"`
+	Group            string `json:"group"`
+	Repository       string `json:"repository"`
+	ProjectRoot      string `json:"projectRoot"`
+	Fingerprint      string `json:"membershipFingerprint"`
+	BindingEpoch     string `json:"bindingEpoch"`
+	CheckoutRevision uint64 `json:"checkoutRevision"`
 }
 
 type record struct {
@@ -100,6 +101,7 @@ func (s *Store) ExportScoped(root *workspace.Root, rel string, owner *Owner) (*m
 	if owner != nil {
 		if owner.Conversation == "" || owner.Group == "" || owner.Repository == "" ||
 			owner.Fingerprint == "" || owner.BindingEpoch == "" ||
+			owner.CheckoutRevision == 0 ||
 			owner.ProjectRoot != root.Path() {
 			return nil, Receipt{}, errors.New("artifact owner must identify the validated conversation and source checkout epoch")
 		}

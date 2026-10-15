@@ -167,7 +167,7 @@ func TestGroupedArtifactRequiresMatchingOwnerAndExpires(t *testing.T) {
 		t.Fatal(err)
 	}
 	owner := Owner{Conversation: "chat-one", Group: "job-search", Repository: "hh",
-		ProjectRoot: root.Path(), Fingerprint: "snapshot", BindingEpoch: "epoch-1"}
+		ProjectRoot: root.Path(), Fingerprint: "snapshot", BindingEpoch: "epoch-1", CheckoutRevision: 1}
 	if _, _, err := store.ExportScoped(root, "private.txt", &Owner{Conversation: "chat-one"}); err == nil {
 		t.Fatal("export accepted incomplete or mismatched owner")
 	}
@@ -179,10 +179,11 @@ func TestGroupedArtifactRequiresMatchingOwnerAndExpires(t *testing.T) {
 		t.Fatal("unscoped read of grouped snapshot succeeded")
 	}
 	for _, different := range []Owner{
-		{Conversation: "chat-two", Group: owner.Group, Repository: owner.Repository, ProjectRoot: owner.ProjectRoot, Fingerprint: owner.Fingerprint, BindingEpoch: owner.BindingEpoch},
-		{Conversation: owner.Conversation, Group: owner.Group, Repository: "habr", ProjectRoot: owner.ProjectRoot, Fingerprint: owner.Fingerprint, BindingEpoch: owner.BindingEpoch},
-		{Conversation: owner.Conversation, Group: owner.Group, Repository: owner.Repository, ProjectRoot: owner.ProjectRoot, Fingerprint: owner.Fingerprint, BindingEpoch: "epoch-2"},
-		{Conversation: owner.Conversation, Group: owner.Group, Repository: owner.Repository, ProjectRoot: owner.ProjectRoot, Fingerprint: "stale", BindingEpoch: owner.BindingEpoch},
+		{Conversation: "chat-two", Group: owner.Group, Repository: owner.Repository, ProjectRoot: owner.ProjectRoot, Fingerprint: owner.Fingerprint, BindingEpoch: owner.BindingEpoch, CheckoutRevision: 1},
+		{Conversation: owner.Conversation, Group: owner.Group, Repository: "habr", ProjectRoot: owner.ProjectRoot, Fingerprint: owner.Fingerprint, BindingEpoch: owner.BindingEpoch, CheckoutRevision: 1},
+		{Conversation: owner.Conversation, Group: owner.Group, Repository: owner.Repository, ProjectRoot: owner.ProjectRoot, Fingerprint: owner.Fingerprint, BindingEpoch: "epoch-2", CheckoutRevision: 1},
+		{Conversation: owner.Conversation, Group: owner.Group, Repository: owner.Repository, ProjectRoot: owner.ProjectRoot, Fingerprint: "stale", BindingEpoch: owner.BindingEpoch, CheckoutRevision: 1},
+		{Conversation: owner.Conversation, Group: owner.Group, Repository: owner.Repository, ProjectRoot: owner.ProjectRoot, Fingerprint: owner.Fingerprint, BindingEpoch: owner.BindingEpoch, CheckoutRevision: 2},
 	} {
 		if _, err := store.ReadScoped(link.URI, &different); err == nil {
 			t.Fatalf("group artifact leaked to owner %+v", different)
@@ -240,7 +241,7 @@ func TestGroupedFallbackRemainsMemberScoped(t *testing.T) {
 		t.Fatal(err)
 	}
 	owner := Owner{Conversation: "chat-a", Group: "job-search", Repository: "work",
-		ProjectRoot: root.Path(), Fingerprint: "v1", BindingEpoch: "e1"}
+		ProjectRoot: root.Path(), Fingerprint: "v1", BindingEpoch: "e1", CheckoutRevision: 1}
 	link, receipt, err := store.ExportScoped(root, "stream.txt", &owner)
 	if err != nil || receipt.Durable {
 		t.Fatalf("expected scoped fallback export: %+v %v", receipt, err)

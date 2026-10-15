@@ -106,7 +106,9 @@ func (s *setupContextStore) resolve(token string, observed map[string]any) (map[
 
 func setupContextTool(name string) bool {
 	switch name {
-	case "setup", "list_projects", "setup_status", "set_project_root", "setup_ui_switch_project":
+	case "setup", "list_projects", "setup_status", "set_project_root", "setup_ui_switch_project",
+		"list_project_groups", "set_project_group", "set_active_repository",
+		"get_project_group_status", "set_repository_checkout":
 		return true
 	default:
 		return false

@@ -26,27 +26,28 @@ type Manager struct {
 }
 
 type WorkspaceInfo struct {
-	Mode                  string                   `json:"mode"`
-	AccessRoot            string                   `json:"accessRoot"`
-	SourceProjectRoot     string                   `json:"sourceProjectRoot"`
-	ProjectRoot           string                   `json:"projectRoot"`
-	RepositoryURL         string                   `json:"repositoryUrl,omitempty"`
-	CheckoutCommit        string                   `json:"checkoutCommit,omitempty"`
-	Cloned                bool                     `json:"cloned,omitempty"`
-	ManagedWorktree       bool                     `json:"managedWorktree"`
-	WorktreeGitRoot       string                   `json:"worktreeGitRoot,omitempty"`
-	WorktreesRoot         string                   `json:"worktreesRoot,omitempty"`
-	WorktreeMode          string                   `json:"worktreeMode"`
-	NewlySelected         bool                     `json:"newlySelected"`
-	BindingScope          string                   `json:"bindingScope"`
-	GroupName             string                   `json:"groupName,omitempty"`
-	PrimaryRepository     string                   `json:"primaryRepository,omitempty"`
-	ActiveRepository      string                   `json:"activeRepository,omitempty"`
-	EffectiveRepository   string                   `json:"effectiveRepository,omitempty"`
-	MembershipFingerprint string                   `json:"membershipFingerprint,omitempty"`
-	Repositories          []GroupBindingRepository `json:"repositories,omitempty"`
-	Generation            uint64                   `json:"generation,omitempty"`
-	BindingEpoch          string                   `json:"bindingEpoch,omitempty"`
+	Mode                      string                   `json:"mode"`
+	AccessRoot                string                   `json:"accessRoot"`
+	SourceProjectRoot         string                   `json:"sourceProjectRoot"`
+	ProjectRoot               string                   `json:"projectRoot"`
+	RepositoryURL             string                   `json:"repositoryUrl,omitempty"`
+	CheckoutCommit            string                   `json:"checkoutCommit,omitempty"`
+	Cloned                    bool                     `json:"cloned,omitempty"`
+	ManagedWorktree           bool                     `json:"managedWorktree"`
+	WorktreeGitRoot           string                   `json:"worktreeGitRoot,omitempty"`
+	WorktreesRoot             string                   `json:"worktreesRoot,omitempty"`
+	WorktreeMode              string                   `json:"worktreeMode"`
+	NewlySelected             bool                     `json:"newlySelected"`
+	BindingScope              string                   `json:"bindingScope"`
+	GroupName                 string                   `json:"groupName,omitempty"`
+	PrimaryRepository         string                   `json:"primaryRepository,omitempty"`
+	ActiveRepository          string                   `json:"activeRepository,omitempty"`
+	EffectiveRepository       string                   `json:"effectiveRepository,omitempty"`
+	MembershipFingerprint     string                   `json:"membershipFingerprint,omitempty"`
+	Repositories              []GroupBindingRepository `json:"repositories,omitempty"`
+	Generation                uint64                   `json:"generation,omitempty"`
+	BindingEpoch              string                   `json:"bindingEpoch,omitempty"`
+	EffectiveCheckoutRevision uint64                   `json:"effectiveCheckoutRevision,omitempty"`
 }
 
 type StatusInfo struct {
@@ -207,6 +208,7 @@ func (m *Manager) WorkspaceFor(meta map[string]any, repository string) (*workspa
 		info.ManagedWorktree = member.ManagedWorktree
 		info.WorktreeGitRoot = member.WorktreeGitRoot
 		info.EffectiveRepository = member.Alias
+		info.EffectiveCheckoutRevision = member.CheckoutRevision
 		return root, info, nil
 	}
 	if repository != "" {
@@ -419,7 +421,13 @@ func infoFromBinding(m *Manager, binding Binding, newly bool) WorkspaceInfo {
 		info.EffectiveRepository = binding.ActiveRepository
 		info.MembershipFingerprint = binding.MembershipFingerprint
 		info.Repositories = append([]GroupBindingRepository(nil), binding.Repositories...)
+		for i := range info.Repositories {
+			if info.Repositories[i].CheckoutRevision == 0 {
+				info.Repositories[i].CheckoutRevision = 1
+			}
+		}
 		info.Generation = binding.Generation
+		info.EffectiveCheckoutRevision = member.CheckoutRevision
 	}
 	info.BindingEpoch = binding.CreatedAt
 	return info

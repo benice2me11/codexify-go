@@ -2,6 +2,7 @@ package projects
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -350,5 +351,192 @@ func TestGroupBindingSwitchAcceptsVisibleActiveRoot(t *testing.T) {
 	}
 	if _, err := m.SelectGroup(meta, "job-search"); err != nil {
 		t.Fatalf("group should allow reselection after explicit switch: %v", err)
+	}
+}
+
+func TestProjectGroupCheckoutModesPersistAndPreserveDirtyWorktree(t *testing.T) {
+	_, cfg := projectGroupFixture(t)
+	meta := map[string]any{"openai/session": "per-member-checkout-mode"}
+	m, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.SelectGroupWithModes(meta, "job-search", map[string]string{
+		"HH": "managed", "habr": "source",
+	}); err != nil {
+		t.Fatalf("initial explicit modes failed: %v", err)
+	}
+	_, first, err := m.WorkspaceFor(meta, "hh")
+	if err != nil || !first.ManagedWorktree || first.EffectiveCheckoutRevision != 1 {
+		t.Fatalf("first HH managed selection incorrect: %+v, %v", first, err)
+	}
+	initialManaged := first.ProjectRoot
+	dirty := filepath.Join(initialManaged, "uncommitted-checkout-note.txt")
+	if err := os.WriteFile(dirty, []byte("keep this working tree\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.SetActiveRepository(meta, "habr"); err != nil {
+		t.Fatal(err)
+	}
+	selected, err := m.SetRepositoryCheckout(meta, "hh", "source")
+	if err != nil || selected.ActiveRepository != "habr" {
+		t.Fatalf("source switch changed active/default: %+v %v", selected, err)
+	}
+	_, source, err := m.WorkspaceFor(meta, "hh")
+	if err != nil || source.ManagedWorktree || source.EffectiveCheckoutRevision != 2 ||
+		!sameGroupPath(source.ProjectRoot, source.SourceProjectRoot) {
+		t.Fatalf("HH source checkout incorrect: %+v %v", source, err)
+	}
+	row, ok := boundGroupMember(Binding{Repositories: selected.Repositories}, "hh")
+	if !ok || !sameGroupPath(row.PreservedManagedProjectRoot, initialManaged) {
+		t.Fatalf("managed checkout was not preserved: %+v", row)
+	}
+	if data, err := os.ReadFile(dirty); err != nil || string(data) != "keep this working tree\n" {
+		t.Fatalf("dirty data lost on managed-to-source: %q %v", data, err)
+	}
+	for i := 0; i < 2; i++ {
+		m, err = New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, restored, err := m.WorkspaceFor(meta, "hh")
+		if err != nil || restored.ManagedWorktree || restored.EffectiveCheckoutRevision != 2 {
+			t.Fatalf("manager recreation %d lost mode: %+v, %v", i+1, restored, err)
+		}
+	}
+	selected, err = m.SetRepositoryCheckout(meta, "hh", "managed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, reopened, err := m.WorkspaceFor(meta, "hh")
+	if err != nil || !reopened.ManagedWorktree || reopened.EffectiveCheckoutRevision != 3 ||
+		!sameGroupPath(reopened.ProjectRoot, initialManaged) {
+		t.Fatalf("managed checkout should be reused: %+v %v", reopened, err)
+	}
+	if data, err := os.ReadFile(dirty); err != nil || string(data) != "keep this working tree\n" {
+		t.Fatalf("dirty data lost after source-to-managed: %q %v", data, err)
+	}
+	_, work, err := m.WorkspaceFor(meta, "work")
+	if err != nil || work.ManagedWorktree {
+		t.Fatalf("unrelated work checkout changed: %+v %v", work, err)
+	}
+	_, habr, err := m.WorkspaceFor(meta, "habr")
+	if err != nil || habr.ManagedWorktree {
+		t.Fatalf("unrelated habr checkout changed: %+v %v", habr, err)
+	}
+	if selected.ActiveRepository != "habr" || selected.Generation < 4 {
+		t.Fatalf("checkout switch reset active/default or revision: %+v", selected)
+	}
+}
+
+func TestProjectGroupInitialCheckoutOverridesRejectInvalidValues(t *testing.T) {
+	_, cfg := projectGroupFixture(t)
+	m, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, invalid := range []map[string]string{
+		{"missing": "managed"},
+		{"hh": "auto"},
+		{"HH": "source", "hh": "managed"},
+	} {
+		meta := map[string]any{"openai/session": fmt.Sprintf("initial-checkout-%d", i)}
+		if _, err := m.SelectGroupWithModes(meta, "job-search", invalid); err == nil {
+			t.Fatalf("invalid initial checkout overrides accepted: %+v", invalid)
+		}
+		if _, _, err := m.Workspace(meta); err == nil {
+			t.Fatal("rejected initial checkout persisted a binding")
+		}
+	}
+	meta := map[string]any{"openai/session": "initial-valid"}
+	if _, err := m.SelectGroupWithModes(meta, "job-search", map[string]string{"hh": "managed"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.SelectGroupWithModes(meta, "job-search", map[string]string{"hh": "source"}); err == nil {
+		t.Fatal("idempotent group select silently changed checkout mode")
+	}
+	if _, err := m.SetRepositoryCheckout(meta, "missing", "managed"); err == nil {
+		t.Fatal("unknown member checkout was accepted")
+	}
+	if _, err := m.SetRepositoryCheckout(meta, "hh", "auto"); err == nil {
+		t.Fatal("auto mode should not be a member checkout")
+	}
+}
+
+func TestProjectGroupPrimaryCheckoutSwitchUpdatesBindingRoot(t *testing.T) {
+	_, cfg := projectGroupFixture(t)
+	m, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta := map[string]any{"openai/session": "primary-switch"}
+	if _, err := m.SelectGroup(meta, "job-search"); err != nil {
+		t.Fatal(err)
+	}
+	managed, err := m.SetRepositoryCheckout(meta, "work", "managed")
+	if err != nil || !managed.ManagedWorktree {
+		t.Fatalf("primary switch didn't select managed: %+v, %v", managed, err)
+	}
+	primaryManaged := managed.ProjectRoot
+	m, err = New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, primary, err := m.Workspace(meta)
+	if err != nil || !sameGroupPath(primary.ProjectRoot, primaryManaged) {
+		t.Fatalf("primary active root changed on restart: %+v, %v", primary, err)
+	}
+	source, err := m.SetRepositoryCheckout(meta, "work", "source")
+	if err != nil || source.ManagedWorktree || sameGroupPath(source.ProjectRoot, primaryManaged) {
+		t.Fatalf("primary did not return to source: %+v, %v", source, err)
+	}
+	if _, err := os.Stat(primaryManaged); err != nil {
+		t.Fatalf("managed tree was removed on primary source switch: %v", err)
+	}
+	if resumed, err := m.SetRepositoryCheckout(meta, "work", "managed"); err != nil || !sameGroupPath(resumed.ProjectRoot, primaryManaged) {
+		t.Fatalf("primary managed checkout was not preserved: %+v, %v", resumed, err)
+	}
+}
+
+func TestProjectGroupLegacyV3CheckoutRevisionUpgradeIsSafe(t *testing.T) {
+	_, cfg := projectGroupFixture(t)
+	meta := map[string]any{"openai/session": "legacy-pg-i2-v3-checkout"}
+	m, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.SelectGroup(meta, "job-search"); err != nil {
+		t.Fatal(err)
+	}
+	identity := IdentityFromMeta(meta)
+	binding, err := m.readBinding(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range binding.Repositories {
+		binding.Repositories[i].CheckoutRevision = 0 // Old PG-I2 on-disk v3 record.
+	}
+	if err := writeBindingFile(m.bindingPath(identity), *binding); err != nil {
+		t.Fatal(err)
+	}
+	m, err = New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, effective, err := m.WorkspaceFor(meta, "hh")
+	if err != nil || effective.EffectiveCheckoutRevision != 1 {
+		t.Fatalf("old group binding should normalize implicit checkout revision 1: %+v %v", effective, err)
+	}
+	changed, err := m.SetRepositoryCheckout(meta, "hh", "managed")
+	if err != nil {
+		t.Fatalf("old group binding cannot change member mode safely: %v", err)
+	}
+	member, exists := boundGroupMember(Binding{Repositories: changed.Repositories}, "hh")
+	if !exists || member.CheckoutRevision != 2 {
+		t.Fatalf("mode switch did not advance old v3 revision: %+v", member)
+	}
+	_, effective, err = m.WorkspaceFor(meta, "hh")
+	if err != nil || effective.EffectiveCheckoutRevision != 2 {
+		t.Fatalf("upgraded revision was not persisted: %+v %v", effective, err)
 	}
 }

@@ -19,12 +19,15 @@ const (
 )
 
 type GroupBindingRepository struct {
-	Alias             string `json:"alias"`
-	SourceProjectRoot string `json:"sourceProjectRoot"`
-	ProjectRoot       string `json:"projectRoot"`
-	Checkout          string `json:"checkout"`
-	ManagedWorktree   bool   `json:"managedWorktree"`
-	WorktreeGitRoot   string `json:"worktreeGitRoot,omitempty"`
+	Alias                       string `json:"alias"`
+	SourceProjectRoot           string `json:"sourceProjectRoot"`
+	ProjectRoot                 string `json:"projectRoot"`
+	Checkout                    string `json:"checkout"`
+	ManagedWorktree             bool   `json:"managedWorktree"`
+	WorktreeGitRoot             string `json:"worktreeGitRoot,omitempty"`
+	CheckoutRevision            uint64 `json:"checkoutRevision,omitempty"`
+	PreservedManagedProjectRoot string `json:"preservedManagedProjectRoot,omitempty"`
+	PreservedManagedGitRoot     string `json:"preservedManagedGitRoot,omitempty"`
 }
 
 type Binding struct {

@@ -33,12 +33,13 @@ type StartInput struct {
 // command. A working directory is not an OS sandbox, but possession of a
 // session ID must never grant a different conversation stdin/process control.
 type Owner struct {
-	Conversation string
-	Group        string
-	Repository   string
-	Root         string
-	Fingerprint  string
-	BindingEpoch string
+	Conversation     string
+	Group            string
+	Repository       string
+	Root             string
+	Fingerprint      string
+	BindingEpoch     string
+	CheckoutRevision uint64
 }
 
 type Result struct {

@@ -15,6 +15,13 @@ import (
 // exposes this only when projectGroupsEnabled is explicitly enabled and the
 // repository-aware tool schemas are registered.
 func (m *Manager) SelectGroup(meta map[string]any, name string) (WorkspaceInfo, error) {
+	return m.SelectGroupWithModes(meta, name, nil)
+}
+
+// SelectGroupWithModes accepts explicit checkout choices at initial group
+// selection. The catalog grants repository membership; checkout kind is a
+// separate per-member choice restricted to source or managed.
+func (m *Manager) SelectGroupWithModes(meta map[string]any, name string, checkouts map[string]string) (WorkspaceInfo, error) {
 	if !m.cfg.ProjectGroupsEnabled || !m.cfg.MultiProject {
 		return WorkspaceInfo{}, errors.New("project groups are disabled")
 	}
@@ -31,6 +38,12 @@ func (m *Manager) SelectGroup(meta map[string]any, name string) (WorkspaceInfo, 
 	}
 	if existing != nil {
 		if existing.Mode == "group" && strings.EqualFold(existing.GroupName, strings.TrimSpace(name)) {
+			for alias, mode := range checkouts {
+				member, ok := boundGroupMember(*existing, alias)
+				if !ok || member.Checkout != strings.ToLower(strings.TrimSpace(mode)) {
+					return WorkspaceInfo{}, errors.New("group checkout selection changed; use set_repository_checkout for an existing member")
+				}
+			}
 			return infoFromBinding(m, *existing, false), nil
 		}
 		return WorkspaceInfo{}, errors.New("conversation already has a workspace binding; explicitly switch or resume before selecting a group")
@@ -39,6 +52,20 @@ func (m *Manager) SelectGroup(meta map[string]any, name string) (WorkspaceInfo, 
 	group, ok := m.groups.groups[strings.ToLower(strings.TrimSpace(name))]
 	if !ok {
 		return WorkspaceInfo{}, fmt.Errorf("unknown project group %q", name)
+	}
+	normalized := make(map[string]string, len(checkouts))
+	for alias, requested := range checkouts {
+		key, checkout := strings.ToLower(strings.TrimSpace(alias)), strings.ToLower(strings.TrimSpace(requested))
+		if _, exists := group.sources[key]; !exists {
+			return WorkspaceInfo{}, fmt.Errorf("unknown group repository alias %q", alias)
+		}
+		if checkout != "source" && checkout != "managed" {
+			return WorkspaceInfo{}, fmt.Errorf("group repository %q checkout must be source or managed", alias)
+		}
+		if _, exists := normalized[key]; exists {
+			return WorkspaceInfo{}, fmt.Errorf("duplicate repository checkout alias %q", alias)
+		}
+		normalized[key] = checkout
 	}
 
 	type newWorktree struct{ sourceGitRoot, activeGitRoot string }
@@ -70,13 +97,18 @@ func (m *Manager) SelectGroup(meta map[string]any, name string) (WorkspaceInfo, 
 		if err != nil {
 			return WorkspaceInfo{}, err
 		}
+		checkout := member.Checkout
+		if override, ok := normalized[member.Alias]; ok {
+			checkout = override
+		}
 		row := GroupBindingRepository{
 			Alias:             member.Alias,
 			SourceProjectRoot: source.Member.SourceProjectRoot,
 			ProjectRoot:       source.Member.SourceProjectRoot,
-			Checkout:          member.Checkout,
+			Checkout:          checkout,
+			CheckoutRevision:  1,
 		}
-		if member.Checkout == "managed" {
+		if checkout == "managed" {
 			worktreesRoot, err := m.pathInsideAccess(m.cfg.Worktrees.Root)
 			if err != nil {
 				return WorkspaceInfo{}, fmt.Errorf("managed group worktrees root is outside access root: %w", err)
@@ -149,10 +181,156 @@ func (m *Manager) SetActiveRepository(meta map[string]any, alias string) (Worksp
 	return infoFromBinding(m, *binding, false), nil
 }
 
+// SetRepositoryCheckout changes only the selected member's Source/Managed
+// checkout. Previous managed worktrees (including dirty files) remain on disk
+// and are saved for reuse when that member switches back.
+func (m *Manager) SetRepositoryCheckout(meta map[string]any, alias, checkout string) (WorkspaceInfo, error) {
+	identity := IdentityFromMeta(meta)
+	if identity == nil {
+		return WorkspaceInfo{}, errors.New("repository checkout change requires a conversation identity")
+	}
+	checkout = strings.ToLower(strings.TrimSpace(checkout))
+	if checkout != "source" && checkout != "managed" {
+		return WorkspaceInfo{}, errors.New("checkout must be source or managed")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	binding, err := m.readBinding(identity)
+	if err != nil {
+		return WorkspaceInfo{}, err
+	}
+	if binding == nil || binding.Mode != "group" {
+		return WorkspaceInfo{}, errors.New("checkout selection requires an active project group")
+	}
+	alias = strings.ToLower(strings.TrimSpace(alias))
+	index := -1
+	for i, member := range binding.Repositories {
+		if member.Alias == alias {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		return WorkspaceInfo{}, fmt.Errorf("unknown repository alias %q", alias)
+	}
+	if binding.Repositories[index].Checkout == checkout {
+		return infoFromBinding(m, *binding, false), nil
+	}
+	// readBinding may return a transient binding with shared slice backing.
+	// Never mutate the old record until persistence of the new state succeeds.
+	binding.Repositories = append([]GroupBindingRepository(nil), binding.Repositories...)
+	row := &binding.Repositories[index]
+	source, err := m.groups.ResolveSource(binding.GroupName, row.Alias)
+	if err != nil {
+		return WorkspaceInfo{}, err
+	}
+	createdGitRoot := ""
+	if checkout == "source" {
+		row.PreservedManagedProjectRoot = row.ProjectRoot
+		row.PreservedManagedGitRoot = row.WorktreeGitRoot
+		row.ProjectRoot = row.SourceProjectRoot
+		row.WorktreeGitRoot = ""
+		row.ManagedWorktree = false
+		row.Checkout = "source"
+	} else {
+		if row.PreservedManagedProjectRoot != "" {
+			if err := m.validateManagedCheckout(row.PreservedManagedProjectRoot,
+				row.PreservedManagedGitRoot, source.Member.GitRoot); err != nil {
+				return WorkspaceInfo{}, fmt.Errorf("preserved managed checkout unavailable; files were not modified: %w", err)
+			}
+			row.ProjectRoot = row.PreservedManagedProjectRoot
+			row.WorktreeGitRoot = row.PreservedManagedGitRoot
+			row.PreservedManagedProjectRoot = ""
+			row.PreservedManagedGitRoot = ""
+		} else {
+			if err := m.groupWorktreeDirectorySafe(binding.GroupName); err != nil {
+				return WorkspaceInfo{}, err
+			}
+			created, err := m.createManagedWorktreeAt(identity,
+				source.Member.SourceProjectRoot, source.Member.GitRoot, "HEAD")
+			if err != nil {
+				return WorkspaceInfo{}, err
+			}
+			row.ProjectRoot = created.ProjectRoot
+			row.WorktreeGitRoot = created.GitRoot
+			createdGitRoot = created.GitRoot
+		}
+		row.Checkout = "managed"
+		row.ManagedWorktree = true
+	}
+	row.CheckoutRevision++
+	if row.CheckoutRevision == 1 {
+		// Groups persisted by PG-I2 predate member checkout revisioning.
+		// Treat that old revision as 1, then switch to 2; otherwise a
+		// source→managed→source cycle could revive a pre-switch owner.
+		row.CheckoutRevision = 2
+	}
+	binding.Generation++
+	primary, _ := boundGroupMember(*binding, binding.PrimaryRepository)
+	binding.SourceProjectRoot = primary.SourceProjectRoot
+	binding.ProjectRoot = primary.ProjectRoot
+	binding.ManagedWorktree = primary.ManagedWorktree
+	binding.WorktreeGitRoot = primary.WorktreeGitRoot
+	if err := m.validateGroupBinding(binding); err != nil {
+		if createdGitRoot != "" {
+			_ = removeManagedWorktree(source.Member.GitRoot, createdGitRoot)
+		}
+		return WorkspaceInfo{}, err
+	}
+	if err := m.writeBinding(identity, *binding); err != nil {
+		if createdGitRoot != "" {
+			_ = removeManagedWorktree(source.Member.GitRoot, createdGitRoot)
+		}
+		return WorkspaceInfo{}, err
+	}
+	return infoFromBinding(m, *binding, false), nil
+}
+
+func (m *Manager) groupWorktreeDirectorySafe(groupName string) error {
+	worktreesRoot, err := m.pathInsideAccess(m.cfg.Worktrees.Root)
+	if err != nil {
+		return fmt.Errorf("managed worktrees root outside access root: %w", err)
+	}
+	group, ok := m.groups.groups[strings.ToLower(groupName)]
+	if !ok {
+		return fmt.Errorf("unknown project group %q", groupName)
+	}
+	for _, member := range group.definition.Repositories {
+		if groupPathWithin(member.SourceProjectRoot, worktreesRoot) ||
+			groupPathWithin(worktreesRoot, member.SourceProjectRoot) {
+			return errors.New("managed group worktrees root overlaps a configured source checkout")
+		}
+	}
+	return nil
+}
+
+func (m *Manager) validateManagedCheckout(activeRoot, managedGitRoot, sourceGitRoot string) error {
+	if activeRoot == "" || managedGitRoot == "" {
+		return errors.New("managed checkout record is incomplete")
+	}
+	root, err := workspace.New(activeRoot)
+	if err != nil || !sameGroupPath(root.Path(), activeRoot) {
+		return errors.New("managed checkout was replaced or removed")
+	}
+	if _, err := m.pathInsideAccess(root.Path()); err != nil ||
+		!groupPathWithin(m.cfg.Worktrees.Root, root.Path()) {
+		return errors.New("managed checkout escapes configured worktrees directory")
+	}
+	actualGitRoot, err := gitTopLevel(root.Path())
+	if err != nil || !sameGroupPath(actualGitRoot, managedGitRoot) ||
+		!sourceOwnsWorktree(sourceGitRoot, actualGitRoot) {
+		return errors.New("managed checkout is not owned by its configured source Git repository")
+	}
+	return nil
+}
+
 func boundGroupMember(binding Binding, alias string) (GroupBindingRepository, bool) {
 	alias = strings.ToLower(strings.TrimSpace(alias))
 	for _, member := range binding.Repositories {
 		if member.Alias == alias {
+			if member.CheckoutRevision == 0 {
+				member.CheckoutRevision = 1
+			}
 			return member, true
 		}
 	}
@@ -198,7 +376,7 @@ func (m *Manager) validateGroupBinding(binding *Binding) error {
 		}
 		seen[member.Alias] = struct{}{}
 		expected, found := group.sources[member.Alias]
-		if !found || expected.member.Checkout != member.Checkout ||
+		if !found || (member.Checkout != "source" && member.Checkout != "managed") ||
 			!sameGroupPath(expected.member.SourceProjectRoot, member.SourceProjectRoot) ||
 			member.ManagedWorktree != (member.Checkout == "managed") {
 			return fmt.Errorf("project group member %q differs from permitted catalog; rebind required", member.Alias)
@@ -214,18 +392,21 @@ func (m *Manager) validateGroupBinding(binding *Binding) error {
 			return fmt.Errorf("project group member %q active root outside access root: %w", member.Alias, err)
 		}
 		if member.ManagedWorktree {
-			if member.WorktreeGitRoot == "" || !groupPathWithin(m.cfg.Worktrees.Root, active.Path()) {
-				return fmt.Errorf("project group member %q managed root outside configured worktrees directory", member.Alias)
+			if member.PreservedManagedProjectRoot != "" || member.PreservedManagedGitRoot != "" {
+				return fmt.Errorf("project group member %q has stale preserved worktree metadata", member.Alias)
 			}
-			gitRoot, err := gitTopLevel(active.Path())
-			if err != nil || !sameGroupPath(gitRoot, member.WorktreeGitRoot) {
-				return fmt.Errorf("project group member %q managed Git root changed", member.Alias)
-			}
-			if !sourceOwnsWorktree(expected.member.GitRoot, gitRoot) {
-				return fmt.Errorf("project group member %q managed Git root is not owned by its configured source", member.Alias)
+			if err := m.validateManagedCheckout(member.ProjectRoot, member.WorktreeGitRoot, expected.member.GitRoot); err != nil {
+				return fmt.Errorf("project group member %q managed checkout invalid: %w", member.Alias, err)
 			}
 		} else if member.WorktreeGitRoot != "" || !sameGroupPath(active.Path(), member.SourceProjectRoot) {
 			return fmt.Errorf("project group member %q source checkout identity changed", member.Alias)
+		}
+		if member.Checkout == "source" &&
+			(member.PreservedManagedProjectRoot != "" || member.PreservedManagedGitRoot != "") {
+			if err := m.validateManagedCheckout(member.PreservedManagedProjectRoot,
+				member.PreservedManagedGitRoot, expected.member.GitRoot); err != nil {
+				return fmt.Errorf("project group member %q preserved checkout invalid: %w", member.Alias, err)
+			}
 		}
 	}
 	if len(seen) != len(group.sources) {

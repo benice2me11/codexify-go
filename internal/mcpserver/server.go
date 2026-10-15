@@ -196,6 +196,7 @@ func NewWithToken(cfg config.Config, logger *slog.Logger, token string) (*Runtim
 					selection.EffectiveRepository == owner.Repository &&
 					selection.MembershipFingerprint == owner.Fingerprint &&
 					selection.BindingEpoch == owner.BindingEpoch &&
+					selection.EffectiveCheckoutRevision == owner.CheckoutRevision &&
 					root.Path() == owner.ProjectRoot
 			})
 		})
@@ -478,11 +479,11 @@ func (r *Runtime) registerTools() {
 					return "", identity, false, nil
 				}
 				if status.Workspace.Mode == "group" {
-					primary, _, rootErr := r.projects.WorkspaceFor(meta, status.Workspace.PrimaryRepository)
+					primary, rootErr := r.projects.ResolveProjectGroupSource(status.Workspace.GroupName, status.Workspace.PrimaryRepository)
 					if rootErr != nil {
 						return "", identity, false, rootErr
 					}
-					return primary.Path(), identity, true, nil
+					return primary.Root.Path(), identity, true, nil
 				}
 				return status.Workspace.ProjectRoot, identity, true, nil
 			})
@@ -516,7 +517,7 @@ func (r *Runtime) registerTools() {
 	})
 
 	mcp.AddTool(r.server, &mcp.Tool{
-		Meta:        ui.SetupToolMeta(),
+		Meta:        ui.SetupToolMetaForGroups(r.cfg.MCP.ProjectGroupsEnabled),
 		Name:        "setup",
 		Title:       "Open Codexify setup",
 		Description: "Open the workspace picker and return this conversation's selection state. The embedded card can select an explicit source checkout or managed worktree.",
@@ -551,16 +552,18 @@ func (r *Runtime) registerTools() {
 
 	if r.cfg.MCP.ProjectGroupsEnabled {
 		mcp.AddTool(r.server, &mcp.Tool{
+			Meta:        ui.AppCallableToolMeta(),
 			Name:        "list_project_groups",
 			Description: "List configured project groups and their canonical source checkout identities. This is read-only; it does not switch the active workspace.",
-		}, func(_ context.Context, _ *mcp.CallToolRequest, _ EmptyInput) (*mcp.CallToolResult, ProjectGroupsOutput, error) {
+		}, func(_ context.Context, _ *mcp.CallToolRequest, _ ListProjectGroupsInput) (*mcp.CallToolResult, ProjectGroupsOutput, error) {
 			return nil, ProjectGroupsOutput{Groups: r.projects.ListProjectGroups()}, nil
 		})
 		mcp.AddTool(r.server, &mcp.Tool{
+			Meta:        ui.AppCallableToolMeta(),
 			Name:        "set_project_group",
 			Description: "Bind one configured group of independent Git repositories to this conversation, without global project-root switching. Requires explicit workspace switching first if a single-project binding already exists.",
 		}, func(_ context.Context, req *mcp.CallToolRequest, in SetProjectGroupInput) (*mcp.CallToolResult, projects.WorkspaceInfo, error) {
-			selection, err := r.projects.SelectGroup(r.requestMeta(req), in.Name)
+			selection, err := r.projects.SelectGroupWithModes(r.requestMeta(req), in.Name, in.Checkouts)
 			if err != nil {
 				return nil, projects.WorkspaceInfo{}, err
 			}
@@ -572,16 +575,34 @@ func (r *Runtime) registerTools() {
 			return nil, selection, nil
 		})
 		mcp.AddTool(r.server, &mcp.Tool{
+			Meta:        ui.AppCallableToolMeta(),
 			Name:        "set_active_repository",
 			Description: "Persist an active default repository alias within the already selected project group. Explicit repository arguments on other tools never update this default.",
-		}, func(_ context.Context, req *mcp.CallToolRequest, in RepositoryInput) (*mcp.CallToolResult, projects.WorkspaceInfo, error) {
+		}, func(_ context.Context, req *mcp.CallToolRequest, in SetActiveRepositoryInput) (*mcp.CallToolResult, projects.WorkspaceInfo, error) {
 			selection, err := r.projects.SetActiveRepository(r.requestMeta(req), in.Repository)
 			return nil, selection, err
 		})
 		mcp.AddTool(r.server, &mcp.Tool{
+			Meta:        ui.AppCallableToolMeta(),
+			Name:        "set_repository_checkout",
+			Description: "Explicitly change one bound group member between Source checkout and Managed worktree. Preserves all previously created managed worktrees, dirty files and other members without rebinding the conversation.",
+		}, func(_ context.Context, req *mcp.CallToolRequest, in SetRepositoryCheckoutInput) (*mcp.CallToolResult, projects.WorkspaceInfo, error) {
+			selection, err := r.projects.SetRepositoryCheckout(r.requestMeta(req), in.Repository, in.Checkout)
+			if err != nil {
+				return nil, projects.WorkspaceInfo{}, err
+			}
+			if memberRoot, _, err := r.projects.WorkspaceFor(r.requestMeta(req), in.Repository); err == nil {
+				if err := r.diff.Ensure(memberRoot.Path(), r.diffOwner(req)); err != nil {
+					return nil, projects.WorkspaceInfo{}, fmt.Errorf("checkout updated but diff baseline initialization failed: %w", err)
+				}
+			}
+			return nil, selection, nil
+		})
+		mcp.AddTool(r.server, &mcp.Tool{
+			Meta:        ui.AppCallableToolMeta(),
 			Name:        "get_project_group_status",
 			Description: "Return the selected group's aliases, source and active checkout roots, checkout modes, active default and generation.",
-		}, func(_ context.Context, req *mcp.CallToolRequest, _ EmptyInput) (*mcp.CallToolResult, projects.WorkspaceInfo, error) {
+		}, func(_ context.Context, req *mcp.CallToolRequest, _ GetProjectGroupStatusInput) (*mcp.CallToolResult, projects.WorkspaceInfo, error) {
 			status, err := r.projects.Status(r.requestMeta(req))
 			if err != nil {
 				return nil, projects.WorkspaceInfo{}, err
@@ -782,12 +803,13 @@ func (r *Runtime) registerTools() {
 				return nil, artifacts.Receipt{}, errors.New("grouped artifact export requires a conversation identity")
 			}
 			owner = &artifacts.Owner{
-				Conversation: identity.Key,
-				Group:        selection.GroupName,
-				Repository:   selection.EffectiveRepository,
-				ProjectRoot:  root.Path(),
-				Fingerprint:  selection.MembershipFingerprint,
-				BindingEpoch: selection.BindingEpoch,
+				Conversation:     identity.Key,
+				Group:            selection.GroupName,
+				Repository:       selection.EffectiveRepository,
+				ProjectRoot:      root.Path(),
+				Fingerprint:      selection.MembershipFingerprint,
+				BindingEpoch:     selection.BindingEpoch,
+				CheckoutRevision: selection.EffectiveCheckoutRevision,
 			}
 		}
 		link, receipt, err := r.artifacts.ExportScoped(root, in.Path, owner)
@@ -1002,6 +1024,16 @@ func (r *Runtime) registerUIResources() {
 		{ui.ChatURI, "codexify-go-markdown-chat", "Codexify Go Markdown chat", "Conversation-specific CHAT.md reader and composer.", ui.ChatHTML},
 		{ui.UpdateURI, "codexify-go-self-update", "Codexify Go update status", "Read-only release/update status app.", ui.UpdateHTML},
 	}
+	if r.cfg.MCP.ProjectGroupsEnabled {
+		resources = append(resources, struct {
+			uri         string
+			name        string
+			title       string
+			description string
+			html        string
+		}{ui.GroupSetupURI, "codexify-go-group-setup", "Codexify Go group setup",
+			"Project Groups, member routing and checkout selection.", ui.SetupHTML})
+	}
 	for _, item := range resources {
 		item := item
 		r.server.AddResource(&mcp.Resource{
@@ -1050,8 +1082,29 @@ type ProjectGroupsOutput struct {
 	Groups []projects.GroupDefinition `json:"groups"`
 }
 
+type ListProjectGroupsInput struct {
+	UIContext string `json:"uiContext,omitempty" jsonschema:"opaque context supplied by the workspace card; omit for model calls"`
+}
+
 type SetProjectGroupInput struct {
-	Name string `json:"name" jsonschema:"configured project group name"`
+	UIContext string            `json:"uiContext,omitempty" jsonschema:"opaque context supplied by the workspace card; omit for model calls"`
+	Name      string            `json:"name" jsonschema:"configured project group name"`
+	Checkouts map[string]string `json:"checkouts,omitempty" jsonschema:"optional explicit alias-to-checkout selections: source or managed"`
+}
+
+type SetActiveRepositoryInput struct {
+	UIContext  string `json:"uiContext,omitempty" jsonschema:"opaque context supplied by the workspace card; omit for model calls"`
+	Repository string `json:"repository" jsonschema:"member alias to make active by default"`
+}
+
+type SetRepositoryCheckoutInput struct {
+	UIContext  string `json:"uiContext,omitempty" jsonschema:"opaque context supplied by the workspace card; omit for model calls"`
+	Repository string `json:"repository" jsonschema:"existing group member alias"`
+	Checkout   string `json:"checkout" jsonschema:"source or managed checkout kind"`
+}
+
+type GetProjectGroupStatusInput struct {
+	UIContext string `json:"uiContext,omitempty" jsonschema:"opaque context supplied by the workspace card; omit for model calls"`
 }
 
 type SetProjectRootInput struct {
@@ -1083,20 +1136,22 @@ type EnvironmentOutput struct {
 }
 
 type SetupStatusOutput struct {
-	Version             string                  `json:"version"`
-	ConnectorVersion    string                  `json:"connectorVersion"`
-	ConversationVersion string                  `json:"conversationVersion,omitempty"`
-	ConversationStale   bool                    `json:"conversationStale"`
-	ConnectorSchema     ConnectorSchemaInfo     `json:"connectorSchema"`
-	Update              selfupdate.Inspection   `json:"update"`
-	UpdateCheckMS       int64                   `json:"updateCheckMs"`
-	MultiProject        bool                    `json:"multiProject"`
-	AccessRoot          string                  `json:"accessRoot"`
-	WorktreeMode        string                  `json:"worktreeMode"`
-	Selected            bool                    `json:"selected"`
-	AwaitingSelection   bool                    `json:"awaitingSelection"`
-	Workspace           *projects.WorkspaceInfo `json:"workspace,omitempty"`
-	Projects            *projects.ListOutput    `json:"projects,omitempty"`
+	Version              string                     `json:"version"`
+	ConnectorVersion     string                     `json:"connectorVersion"`
+	ConversationVersion  string                     `json:"conversationVersion,omitempty"`
+	ConversationStale    bool                       `json:"conversationStale"`
+	ConnectorSchema      ConnectorSchemaInfo        `json:"connectorSchema"`
+	Update               selfupdate.Inspection      `json:"update"`
+	UpdateCheckMS        int64                      `json:"updateCheckMs"`
+	MultiProject         bool                       `json:"multiProject"`
+	ProjectGroupsEnabled bool                       `json:"projectGroupsEnabled,omitempty"`
+	Groups               []projects.GroupDefinition `json:"groups,omitempty"`
+	AccessRoot           string                     `json:"accessRoot"`
+	WorktreeMode         string                     `json:"worktreeMode"`
+	Selected             bool                       `json:"selected"`
+	AwaitingSelection    bool                       `json:"awaitingSelection"`
+	Workspace            *projects.WorkspaceInfo    `json:"workspace,omitempty"`
+	Projects             *projects.ListOutput       `json:"projects,omitempty"`
 }
 
 type SetupInput struct {
@@ -1163,19 +1218,21 @@ func (r *Runtime) setupStatus(ctx context.Context, req *mcp.CallToolRequest, in 
 	connectorInfo := connectorSchemaInfo(r.schemaVer, reloadedVersion, conversationVersion)
 	update := selfupdate.Inspect(ctx, buildinfo.Version, in.ForceUpdateCheck)
 	return nil, SetupStatusOutput{
-		Version:             buildinfo.Version,
-		ConnectorVersion:    r.schemaVer,
-		ConversationVersion: conversationVersion,
-		ConversationStale:   conversationVersion != "" && conversationVersion != r.schemaVer,
-		ConnectorSchema:     connectorInfo,
-		Update:              update,
-		UpdateCheckMS:       time.Since(started).Milliseconds(),
-		MultiProject:        status.MultiProject,
-		AccessRoot:          status.AccessRoot,
-		WorktreeMode:        status.WorktreeMode,
-		Selected:            status.Selected,
-		AwaitingSelection:   status.AwaitingSelection,
-		Workspace:           status.Workspace,
+		Version:              buildinfo.Version,
+		ConnectorVersion:     r.schemaVer,
+		ConversationVersion:  conversationVersion,
+		ConversationStale:    conversationVersion != "" && conversationVersion != r.schemaVer,
+		ConnectorSchema:      connectorInfo,
+		Update:               update,
+		UpdateCheckMS:        time.Since(started).Milliseconds(),
+		MultiProject:         status.MultiProject,
+		ProjectGroupsEnabled: status.ProjectGroupsEnabled,
+		Groups:               r.projects.ListProjectGroups(),
+		AccessRoot:           status.AccessRoot,
+		WorktreeMode:         status.WorktreeMode,
+		Selected:             status.Selected,
+		AwaitingSelection:    status.AwaitingSelection,
+		Workspace:            status.Workspace,
 	}, nil
 }
 
@@ -1273,12 +1330,13 @@ func (r *Runtime) execCommand(_ context.Context, req *mcp.CallToolRequest, in Ex
 		return nil, ExecCommandOutput{}, errors.New("exec_command requires a conversation identity in multi-project mode")
 	}
 	owner := execsession.Owner{
-		Conversation: conversation,
-		Group:        selection.GroupName,
-		Repository:   selection.EffectiveRepository,
-		Root:         root.Path(),
-		Fingerprint:  selection.MembershipFingerprint,
-		BindingEpoch: selection.BindingEpoch,
+		Conversation:     conversation,
+		Group:            selection.GroupName,
+		Repository:       selection.EffectiveRepository,
+		Root:             root.Path(),
+		Fingerprint:      selection.MembershipFingerprint,
+		BindingEpoch:     selection.BindingEpoch,
+		CheckoutRevision: selection.EffectiveCheckoutRevision,
 	}
 	res, err := r.exec.Start(execsession.StartInput{
 		Command: in.Command,
@@ -1326,7 +1384,8 @@ func (r *Runtime) writeStdin(_ context.Context, req *mcp.CallToolRequest, in Wri
 		selected.GroupName != owner.Group ||
 		selected.EffectiveRepository != owner.Repository ||
 		selected.MembershipFingerprint != owner.Fingerprint ||
-		selected.BindingEpoch != owner.BindingEpoch {
+		selected.BindingEpoch != owner.BindingEpoch ||
+		selected.EffectiveCheckoutRevision != owner.CheckoutRevision {
 		return nil, ExecCommandOutput{}, errors.New("exec session checkout binding changed; stdin access denied")
 	}
 	res, err := r.exec.WriteOwned(in.SessionID, owner, in.Chars, time.Duration(in.YieldTimeMS)*time.Millisecond)
@@ -1352,7 +1411,15 @@ func (r *Runtime) chatWorkspaceFor(req *mcp.CallToolRequest) (*workspace.Root, p
 		return nil, projects.WorkspaceInfo{}, err
 	}
 	if status.Workspace != nil && status.Workspace.Mode == "group" {
-		return r.workspaceForRepository(req, status.Workspace.PrimaryRepository)
+		// The group conversation's CHAT.md belongs to its primary *source*
+		// checkout. It must not migrate when the primary member switches
+		// between source and managed worktrees in this same conversation.
+		primary, err := r.projects.ResolveProjectGroupSource(
+			status.Workspace.GroupName, status.Workspace.PrimaryRepository)
+		if err != nil {
+			return nil, projects.WorkspaceInfo{}, err
+		}
+		return primary.Root, *status.Workspace, nil
 	}
 	return r.workspaceFor(req)
 }
@@ -1561,6 +1628,7 @@ func builtInToolNames() map[string]struct{} {
 		"chat_read", "chat_write", "chat_await", "self_update_status",
 		"setup", "list_projects", "set_project_root", "setup_ui_switch_project", "setup_status", "list_worktrees", "get_environment",
 		"list_project_groups", "set_project_group", "set_active_repository", "get_project_group_status",
+		"set_repository_checkout",
 		"recall", "remember", "update_memory_note", "forget_memory_note", "skills_list", "skills_read",
 		"export_host_file", "import_host_file",
 		"read_file", "write_file", "apply_patch", "glob", "grep", "exec_command", "write_stdin",

@@ -63,6 +63,8 @@ function host(html, options = {}) {
     try {
       await tick();
       if (options.fail) throw new Error('fixture failure');
+      if (options.failObject) throw options.failObject;
+      if (options.toolError) return {isError:true,content:options.toolError};
       let data;
       switch (name) {
         case 'setup_status': data={workspace:currentWorkspace,awaitingSelection,worktreeMode:'auto'}; break;
@@ -179,6 +181,17 @@ for (const [name,html] of Object.entries(pages)) {
     await settle();
     assert.equal(failed.calls.length,count,'error response initiated retries');
     assert.ok(failed.elements.get('error').textContent.includes('fixture failure'));
+    if (name==='SetupHTML') {
+      const objectFailure=host(html,{failObject:{code:'MCP_BRIDGE_ERROR',message:'Linux setup call rejected'}});
+      objectFailure.click('refresh');
+      await settle();
+      assert.ok(objectFailure.elements.get('error').textContent.includes('Linux setup call rejected'),'object-shaped bridge error must be readable');
+      assert.ok(!objectFailure.elements.get('error').textContent.includes('[object Object]'));
+      const mcpFailure=host(html,{toolError:[{type:'text',text:'Cached Linux v1 Setup request rejected'}]});
+      mcpFailure.click('refresh');
+      await settle();
+      assert.ok(mcpFailure.elements.get('error').textContent.includes('Cached Linux v1 Setup request rejected'),'MCP isError text must be visible');
+    }
     const sync=host(html,{feedback:'sync'});
     await settle();
     assert.equal(sync.calls.length,expectedInitial[name],'synchronous feedback loop');

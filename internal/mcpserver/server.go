@@ -879,6 +879,7 @@ func (r *Runtime) registerUIResources() {
 	}{
 		{ui.SetupURI, "codexify-go-setup", "Codexify Go workspace setup", "Workspace selection and status app.", ui.SetupHTML},
 		{ui.LegacySetupURI, "codexify-go-setup-legacy", "Codexify Go workspace setup (legacy)", "Compatible resource for already mounted v2 Setup cards.", ui.SetupHTML},
+		{ui.LegacyLinuxSetupURI, "codexify-go-setup-legacy-linux", "Codexify Go workspace setup (Linux legacy)", "Compatible resource for already mounted v1 Linux Setup cards.", ui.SetupHTML},
 		{ui.DiffURI, "codexify-go-diff", "Codexify Go diff", "Compact working-tree diff viewer.", ui.DiffHTML},
 		{ui.ChatURI, "codexify-go-markdown-chat", "Codexify Go Markdown chat", "Conversation-specific CHAT.md reader and composer.", ui.ChatHTML},
 		{ui.UpdateURI, "codexify-go-self-update", "Codexify Go update status", "Read-only release/update status app.", ui.UpdateHTML},

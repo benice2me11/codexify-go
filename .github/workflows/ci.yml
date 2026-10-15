@@ -40,6 +40,10 @@ jobs:
           if [[ "${{ runner.os }}" == Windows ]]; then ext=.exe; fi
           go build -trimpath -o "codexify-go${ext}" ./cmd/codexify-go
           "./codexify-go${ext}" version
+      - name: Isolated Setup v3 compiled binary smoke
+        if: runner.os == 'Windows'
+        shell: bash
+        run: go run ./tools/forensics/setup-smoke "./codexify-go.exe"
 
   race:
     runs-on: ubuntu-latest

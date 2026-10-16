@@ -1,6 +1,7 @@
 # Windows G10 Go-to-Go transactional upgrade protocol — 2026-10-15
 
 **Status:** **GO_UPGRADED / G10_RUNNING_NOT_ACCEPTED**. Independent live SCM switch completed 2026-10-15 at 13:26 Moscow time.
+**Operator follow-up, 2026-10-16:** User accepted the *already running* Go-only deployment with explicit residual-risk deviations from the G10 24-hour observation protocol. This is `G10_OPERATOR_ACCEPTED_WITH_DEVIATIONS`, not a retrospective strict technical `G10 PASS`. See `docs/handoffs/WINDOWS_G10_OPERATOR_RISK_ACCEPTANCE_20261016.md`. This follow-up does not authorize the different Project Groups binary or close G11/v0.9.0 release.
 **Current owner:** Setup v3 Go Windows SCM service; previous Go is preserved for Go-only recovery; Rust service and watchdog remain disabled.
 **Original frozen live binary:** SHA-256 B908C8DE5BB5526BCFEFC69AAF631A9189963A8BBB1EC08AFD380495BF10F387.
 **New Setup v3 candidate:** commit cdf8c98, SHA-256 8BAA786E6BEFDCE5C746419B5A9277D3531A824938396DF8DDDA3FB7200B5880.

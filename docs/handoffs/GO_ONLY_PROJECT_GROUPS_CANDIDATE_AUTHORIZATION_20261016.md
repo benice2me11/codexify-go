@@ -1,7 +1,7 @@
 # Go-only Project Groups canary — separate candidate authorization
 
 **Date:** 2026-10-16
-**Status:** implemented in development; production cutover **not requested or executed**.
+**Status:** implemented and merged through PR #33, `main` at `893f5ec6959354b50ae9c0f02d06ce3816771f1d`. Native PR CI [38864012738](https://github.com/benice2me11/codexify-go/actions/runs/38864012738) and main CI [38864561202](https://github.com/benice2me11/codexify-go/actions/runs/38864561202) both passed **11/11**. Production cutover **not requested or executed**.
 
 ## Distinguish the three independent decisions
 
@@ -18,6 +18,8 @@ The previously isolated compiled candidate remains:
 - Staged config SHA256 `9453FF3D13DCD97287112D13AB5A3E8ABDC64AAAC72C910AD238AA339D6D72F1`.
 - New group `job-search` contains `work`, `hh`, `habr`, all in source mode; `projectGroupsEnabled=false`.
 - Previous verified Go and its original config, G10 observer XML, private bindings and tunnel secrets are preserved outside the Git checkout under `%USERPROFILE%\.codexify-go\staging\project-groups-v1-cd6b5bd59dea`.
+- The private **`operator-trial-v6` was prepared after green PR CI**, from exact operator source commit `898ef12bda1ae52866ab46a35292f3cad7c0e441`, with **10/10** frozen operator-file hashes verified and **10/10** Git-normalized files matching merged `main`. Previous-Go executable/profile snapshots and risk-record SHA256 match the manifest. The old `operator-trial-v5` executor was made inert after verifying the v6 successor, preserving its previous snapshots only for forensics.
+- Frozen read-only `Prepare`, `Invoke`, `Approve` and task-builder checks all returned the same expected status: **previous Go accepted, technical G10 HOLD, `candidate_specific_approval_required`**, no candidate approval record, no operator task registered and no service changes.
 
 ## How the risk exception is enforced
 
@@ -30,7 +32,7 @@ The previously isolated compiled candidate remains:
 
 ## Next operator action
 
-After review and native CI, create a **new immutable operator snapshot** (e.g. `operator-trial-v6`) from the exact approved source; previous `operator-trial-v5` is a different pinned script version and must not be executed with new switches.
+The exact approved operator scripts are already frozen in private **`operator-trial-v6`**. Do not re-run `-Prepare` over that directory or use an earlier snapshot. If the running Go owner, watcher identity, G10 status, candidate files or source configuration changes, reprepare into a **new versioned** transaction directory after appropriate verification.
 
 Read-only preparation and readiness:
 
@@ -38,7 +40,10 @@ Read-only preparation and readiness:
 $stage = Join-Path $env:USERPROFILE '.codexify-go\staging\project-groups-v1-cd6b5bd59dea'
 $run = Join-Path $env:USERPROFILE '.codexify-go\cutover-v2\20261015T101000Z-go-only-upgrade'
 $tx = Join-Path $stage 'operator-trial-v6'
-./tools/windows/cutover-v2/Prepare-GoOnlyTrialUpgrade.ps1 -StagingDirectory $stage -CurrentG10RunDirectory $run -TransactionDirectory $tx -UseAcceptedG10
+& (Join-Path $tx 'operator\Prepare-GoOnlyTrialUpgrade.ps1') -StagingDirectory $stage -CurrentG10RunDirectory $run -TransactionDirectory $tx -UseAcceptedG10
+& (Join-Path $tx 'operator\Invoke-GoOnlyTrialUpgrade.ps1') -TransactionDirectory $tx -UseAcceptedG10
+& (Join-Path $tx 'operator\Approve-GoOnlyTrialCandidate.ps1') -TransactionDirectory $tx
+& (Join-Path $tx 'operator\New-GoOnlyTrialOperatorTask.ps1') -TransactionDirectory $tx -UseAcceptedG10
 ```
 
 Only after a **distinct explicit go/no-go for the new candidate** may the prepared `Approve-GoOnlyTrialCandidate.ps1` be used with `-Authorize -OperatorApproved -ExpectedCandidateSHA256`, followed by `New-GoOnlyTrialOperatorTask.ps1 -UseAcceptedG10 -Register -OperatorApproved` in the appropriate elevated operator context. Registration does not start the task. Starting the independent on-demand task would be a separately authorized production action.

@@ -19,6 +19,12 @@ type Manager struct {
 	groups *GroupRegistry
 	mu     sync.Mutex
 
+	// Protects file reads against the atomic rename used to persist a new
+	// binding or workspace-switch record. Windows can reject an overlapping
+	// ReadFile with ERROR_SHARING_VIOLATION; m.mu only serializes mutations.
+	// This is in-process safety, not a cross-process compare-and-swap lock.
+	bindingIO sync.RWMutex
+
 	transientMu       sync.RWMutex
 	transientBindings map[string]Binding
 	transientChanges  map[string]WorkspaceChange

@@ -70,7 +70,9 @@ func (m *Manager) readBinding(identity *Identity) (*Binding, error) {
 		return &copyBinding, nil
 	}
 	path := m.bindingPath(identity)
+	m.bindingIO.RLock()
 	data, err := os.ReadFile(path)
+	m.bindingIO.RUnlock()
 	if errors.Is(err, os.ErrNotExist) {
 		return m.importLegacyRustBinding(identity)
 	}
@@ -106,6 +108,8 @@ func (m *Manager) writeBinding(identity *Identity, binding Binding) error {
 		return err
 	}
 	path := filepath.Join(m.cfg.BindingsDir, binding.IdentityHash+".json")
+	m.bindingIO.Lock()
+	defer m.bindingIO.Unlock()
 	return writeBindingFile(path, binding)
 }
 

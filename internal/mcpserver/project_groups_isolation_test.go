@@ -20,8 +20,12 @@ func TestProjectGroupConcurrentExplicitCallsDoNotRaceActiveAlias(t *testing.T) {
 
 	aliases := []string{"work", "hh", "habr"}
 	var wg sync.WaitGroup
-	errors := make(chan error, 32)
-	for i := 0; i < 18; i++ {
+	errors := make(chan error, 96)
+	// Deliberately overlap persistent binding reads (explicit repository
+	// calls) with writes (active-alias changes). On Windows, an unguarded
+	// ReadFile during os.Rename can intermittently fail with
+	// ERROR_SHARING_VIOLATION, even though both paths are valid.
+	for i := 0; i < 36; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -35,7 +39,7 @@ func TestProjectGroupConcurrentExplicitCallsDoNotRaceActiveAlias(t *testing.T) {
 					Meta: f.meta, Name: tool, Arguments: args,
 				})
 				if err != nil || result == nil || result.IsError {
-					errors <- fmt.Errorf("%s/%s failed: %v result=%+v", alias, tool, err, result)
+					errors <- fmt.Errorf("%s/%s failed: %v result=%+v details=%s", alias, tool, err, result, projectGroupErrorText(result))
 					return
 				}
 				out, ok := result.StructuredContent.(map[string]any)
@@ -55,7 +59,7 @@ func TestProjectGroupConcurrentExplicitCallsDoNotRaceActiveAlias(t *testing.T) {
 			}
 		}(i)
 	}
-	for i := 0; i < 6; i++ {
+	for i := 0; i < 12; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -64,7 +68,7 @@ func TestProjectGroupConcurrentExplicitCallsDoNotRaceActiveAlias(t *testing.T) {
 				Arguments: map[string]any{"repository": aliases[i%len(aliases)]},
 			})
 			if err != nil || result == nil || result.IsError {
-				errors <- fmt.Errorf("set_active_repository %d: %v result=%+v", i, err, result)
+				errors <- fmt.Errorf("set_active_repository %d: %v result=%+v details=%s", i, err, result, projectGroupErrorText(result))
 			}
 		}(i)
 	}
@@ -80,6 +84,19 @@ func TestProjectGroupConcurrentExplicitCallsDoNotRaceActiveAlias(t *testing.T) {
 	if generation, ok := status["generation"].(float64); !ok || generation < 1 {
 		t.Fatalf("active selection generation invalid after concurrent calls: %+v", status)
 	}
+}
+
+func projectGroupErrorText(result *mcp.CallToolResult) string {
+	if result == nil {
+		return "<nil response>"
+	}
+	var messages []string
+	for _, item := range result.Content {
+		if content, ok := item.(*mcp.TextContent); ok {
+			messages = append(messages, content.Text)
+		}
+	}
+	return strings.Join(messages, " | ")
 }
 
 func TestProjectGroupGitCommitPushIndependentDisposableFixtures(t *testing.T) {

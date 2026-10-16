@@ -280,7 +280,9 @@ func (m *Manager) readSwitch(identity *Identity) (*WorkspaceChange, error) {
 		copyChange := change
 		return &copyChange, nil
 	}
+	m.bindingIO.RLock()
 	data, err := os.ReadFile(m.switchPath(identity))
+	m.bindingIO.RUnlock()
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
@@ -316,7 +318,10 @@ func (m *Manager) writeSwitch(identity *Identity, change WorkspaceChange) error 
 	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	m.bindingIO.Lock()
+	err = os.Rename(tmp, path)
+	m.bindingIO.Unlock()
+	if err != nil {
 		_ = os.Remove(tmp)
 		return err
 	}
@@ -330,5 +335,7 @@ func (m *Manager) finishSwitch(identity *Identity) {
 		m.transientMu.Unlock()
 		return
 	}
+	m.bindingIO.Lock()
 	_ = os.Remove(m.switchPath(identity))
+	m.bindingIO.Unlock()
 }

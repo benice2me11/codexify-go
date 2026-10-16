@@ -15,6 +15,9 @@ $ErrorActionPreference = 'Stop'
 if ($AsOfUtc -and !$Offline) {
     throw '-AsOfUtc is restricted to -Offline fixture analysis; live readiness must use the actual clock.'
 }
+if (!$Offline -and ($RequiredHours -lt 24 -or $MaxGapSeconds -gt 60 -or $GuardFreshSeconds -gt 45)) {
+    throw 'Live PG-I7 readiness requires at least 24h continuous samples, <=60s gaps and <=45s guard age. Only -Offline fixtures may relax these thresholds.'
+}
 $now = [DateTimeOffset]::UtcNow
 if ($AsOfUtc) {
     $now = [DateTimeOffset]::Parse($AsOfUtc)
@@ -131,6 +134,18 @@ if (!$Offline) {
     }
     if ($inspection.scheduledTasks.'CodexifyGo-G10Observers' -ne 'Running') {
         $reasons.Add('g10_observer_not_running')
+    }
+    try {
+        $task = Get-ScheduledTask -TaskName 'CodexifyGo-G10Observers' -ErrorAction Stop
+        $pinned = @($task.Actions | Where-Object {
+            [string]$_.Arguments -match [regex]::Escape($runPath) -and
+            [string]$_.Arguments -match 'Watch-GoTrial[.]ps1'
+        })
+        if ($pinned.Count -ne 1) {
+            $reasons.Add('g10_evidence_run_not_pinned_to_live_observer')
+        }
+    } catch {
+        $reasons.Add('g10_observer_action_unreadable')
     }
     if ($inspection.scheduledTasks.Codexify -ne 'Disabled' -or
         $inspection.scheduledTasks.'Codexify Watchdog' -ne 'Disabled') {

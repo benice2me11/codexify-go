@@ -50,6 +50,20 @@ try {
     Assert-Condition ($clean.decision -eq 'OFFLINE_SOAK_ONLY') 'offline fixture incorrectly authorized live cutover'
     Assert-Condition ($clean.productionAcceptance -eq 'NOT_EVALUATED') 'offline fixture claimed production acceptance'
     Assert-Condition ($clean.soak.gapCount -eq 0) 'clean fixture has artificial gaps'
+    $loweredLiveThresholdBlocked = $false
+    try {
+        & $script -RunDirectory $root -RequiredHours 1 | Out-Null
+    } catch {
+        $loweredLiveThresholdBlocked = $_.Exception.Message -like '*at least 24h*'
+    }
+    Assert-Condition $loweredLiveThresholdBlocked 'live readiness allowed reduced soak hours'
+    $widenedLiveGapBlocked = $false
+    try {
+        & $script -RunDirectory $root -MaxGapSeconds 600 | Out-Null
+    } catch {
+        $widenedLiveGapBlocked = $_.Exception.Message -like '*<=60s gaps*'
+    }
+    Assert-Condition $widenedLiveGapBlocked 'live readiness allowed 10-minute gaps'
 
     # A fresh CONTINUE alone must not make a shorter-than-required window pass.
     Write-Probes @($cleanRows | Where-Object { $_.seconds -le 3000 })

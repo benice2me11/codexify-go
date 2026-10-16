@@ -54,6 +54,9 @@ Implemented `tools/windows/cutover-v2/Assess-ProjectGroupsCanaryReadiness.ps1` a
 last guard, no unexpected gaps, no non-CONTINUE decisions, current Go-only
 topology (exactly two Go processes from the same service binary, one owned
 tunnel, zero Rust processes, controlled G10 observer), and disabled Rust tasks.
+It also verifies that the running G10 scheduled-task action explicitly points
+to the supplied evidence run directory; live callers cannot weaken the
+24-hour/60-second-gap/45-second-freshness thresholds via parameters.
 It never reports production rollout PASS:
 the best possible local result is `LOCAL_READY_FOR_OPERATOR_REVIEW` after
 the other conditions are satisfied.

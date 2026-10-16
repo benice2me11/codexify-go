@@ -1,5 +1,7 @@
 # Go-only Project Groups canary — separate candidate authorization
 
+**Operational follow-up (2026-10-16 10:59 Moscow):** The user subsequently gave explicit authorization for the exact candidate SHA256, and the independently scheduled Go→Go binary switch completed successfully. The operator reported `GO_UPGRADED`; the new Go-only watcher is Running. **Project Groups remains disabled.** See `docs/handoffs/WINDOWS_PROJECT_GROUPS_BINARY_CUTOVER_20261016.md` for the authoritative live result and remaining acceptance gates. Historical pre-cutover `HOLD` and approval requirements below are retained as the transaction's audit context.
+
 **Date:** 2026-10-16
 **Status:** implemented and merged through PR #33, `main` at `893f5ec6959354b50ae9c0f02d06ce3816771f1d`. Native PR CI [38864012738](https://github.com/benice2me11/codexify-go/actions/runs/38864012738) and main CI [38864561202](https://github.com/benice2me11/codexify-go/actions/runs/38864561202) both passed **11/11**. Production cutover **not requested or executed**.
 

@@ -1,5 +1,7 @@
 # Windows Go-only trial → Go-only Project Groups transaction (2026-10-16)
 
+**Completed binary cutover:** The subsequent, SHA256-bound `operator-trial-v6` transaction executed on 2026-10-16 after explicit user authorization and completed `GO_UPGRADED`. See `docs/handoffs/WINDOWS_PROJECT_GROUPS_BINARY_CUTOVER_20261016.md` for actual process/task/hash evidence. Feature enablement and full hosted Setup v4 acceptance remain pending; the preparation-only notes below describe the earlier stages.
+
 **Status:** PREPARED (read-only operator snapshot), execution **HOLD**, production SCM unchanged.
 
 **2026-10-16 G10 operator decision:** The user accepted the currently deployed Go-only instance with a documented exception for incomplete continuous soak. See `docs/handoffs/WINDOWS_G10_OPERATOR_RISK_ACCEPTANCE_20261016.md`. The *strict measurement* and the independent Project Groups canary preflight still report HOLD. Do not confuse acceptance of the **previous/current Go** with approval to restart into the **new Go candidate**.

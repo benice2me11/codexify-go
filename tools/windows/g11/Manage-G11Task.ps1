@@ -32,6 +32,7 @@ if(!$dest.StartsWith($programData,[StringComparison]::OrdinalIgnoreCase)){
 $taskName='CodexifyGo-G11SteadyState'
 $bin=Join-Path $dest 'bin'
 $events=Join-Path $dest 'evidence'
+$recoveryBase=Join-Path $dest 'recovery'
 $pinsFile=Join-Path $dest 'runtime-pins.json'
 $manifestSha=(Get-FileHash -LiteralPath $manifestFile -Algorithm SHA256).Hash
 $oldSha=(Get-FileHash -LiteralPath $m.oldExe -Algorithm SHA256 -ErrorAction Stop).Hash
@@ -110,9 +111,11 @@ if($Action -eq 'InstallReadOnly'){
     if(!$spec.g10Enabled -or $go10Watchers.Count -ne 1){
         throw 'Observe-only deployment requires a single still-active G10 owner'
     }
-    New-Item -ItemType Directory -Path $bin,$events -Force -ErrorAction Stop|Out-Null
+    $currentRecovery=Join-Path $recoveryBase 'current'
+    $currentRecoveryEvents=Join-Path $currentRecovery 'evidence'
+    New-Item -ItemType Directory -Path $bin,$events,$currentRecoveryEvents -Force -ErrorAction Stop|Out-Null
     # A SYSTEM task must never execute scripts left writable by standard users.
-    foreach($folder in @($dest,$bin,$events)){
+    foreach($folder in @($dest,$bin,$events,$recoveryBase,$currentRecovery,$currentRecoveryEvents)){
         & icacls.exe $folder '/inheritance:r' '/grant:r' '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
         if($LASTEXITCODE -ne 0){throw 'Failed to protect G11 directory ACL'}
         Assert-ProtectedDirectory $folder
@@ -131,6 +134,17 @@ if($Action -eq 'InstallReadOnly'){
             throw 'Protected recovery script copy failed hash verification'
         }
     }
+    # A dedicated minimal v1 manifest pins the same old Go as operator-v6 but
+    # permits G11 to select the matching currently approved config. Never
+    # rewrite the frozen v6 transaction, its evidence or its original manifest.
+    $currentRecoveryManifest=Join-Path $currentRecovery 'manifest.json'
+    [ordered]@{
+        version=1;serviceName='CodexifyGo';g10TaskName=[string]$m.g10TaskName
+        oldExe=[string]$m.oldExe;oldSha=$oldSha
+        newExe=[string]$m.newExe;newImage=[string]$m.newImage
+        originalImage=[string]$m.originalImage
+    }|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $currentRecoveryManifest -Encoding UTF8 -ErrorAction Stop
+    $currentRecoverySha=(Get-FileHash -LiteralPath $currentRecoveryManifest -Algorithm SHA256).Hash
     $pins=[ordered]@{
         version=1;serviceName='CodexifyGo'
         transactionManifest=$manifestFile;manifestSha=$manifestSha
@@ -145,6 +159,11 @@ if($Action -eq 'InstallReadOnly'){
         recoveryScriptSha=(Get-FileHash -LiteralPath (Join-Path $root 'operator\Invoke-GoOnlyRecovery.ps1') -Algorithm SHA256).Hash
         recoveryModule=Join-Path $bin 'GoOnlyUpgrade.psm1'
         recoveryModuleSha=(Get-FileHash -LiteralPath (Join-Path $root 'operator\GoOnlyUpgrade.psm1') -Algorithm SHA256).Hash
+        recoveryProfiles=@([ordered]@{
+            image=[string]$m.newImage
+            directory=$currentRecovery
+            manifestSha=$currentRecoverySha
+        })
     }
     $pins|ConvertTo-Json -Depth 6|Set-Content -LiteralPath $pinsFile -Encoding UTF8 -ErrorAction Stop
     $triggers=@(
@@ -224,14 +243,41 @@ if($Action -eq 'ApproveNormalProfile'){
     if(!$installedPins.PSObject.Properties['additionalCurrentProfiles']){
         $installedPins|Add-Member -NotePropertyName additionalCurrentProfiles -NotePropertyValue @()
     }
+    if(!$installedPins.PSObject.Properties['recoveryProfiles'] -or
+        @($installedPins.recoveryProfiles).Count -ne 1){
+        throw 'Missing initial G11 pinned recovery profile'
+    }
     if(@($installedPins.additionalCurrentProfiles).Count -ne 0){
         throw 'Additional profile already installed; explicit separate revision required'
     }
     $backup=Join-Path $events 'runtime-pins-before-normal-profile.json'
     if(Test-Path -LiteralPath $backup){throw 'Profile rollback copy already frozen'}
+    $sourceRecovery=$installedPins.recoveryProfiles[0]
+    $sourceRecoveryManifest=Join-Path $sourceRecovery.directory 'manifest.json'
+    if((Get-FileHash -LiteralPath $sourceRecoveryManifest -Algorithm SHA256).Hash -ne [string]$sourceRecovery.manifestSha){
+        throw 'Existing protected Go-only recovery manifest was modified'
+    }
+    $normalRecovery=Join-Path $recoveryBase 'normal'
+    if(Test-Path -LiteralPath $normalRecovery){throw 'Normal recovery profile already staged'}
+    $normalRecoveryEvents=Join-Path $normalRecovery 'evidence'
+    New-Item -ItemType Directory -Path $normalRecoveryEvents -Force -ErrorAction Stop|Out-Null
+    foreach($folder in @($normalRecovery,$normalRecoveryEvents)){
+        & icacls.exe $folder '/inheritance:r' '/grant:r' '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
+        if($LASTEXITCODE -ne 0){throw 'Failed to protect normal recovery profile'}
+        Assert-ProtectedDirectory $folder
+    }
+    $normalManifest=Get-Content -LiteralPath $sourceRecoveryManifest -Raw|ConvertFrom-Json
+    if([string]$normalManifest.newImage -ne $baseImage){throw 'Recovery source image did not match current pinned image'}
+    $normalManifest.newImage=$newImage
+    $normalManifestPath=Join-Path $normalRecovery 'manifest.json'
+    $normalManifest|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $normalManifestPath -Encoding UTF8 -ErrorAction Stop
+    $normalManifestSha=(Get-FileHash -LiteralPath $normalManifestPath -Algorithm SHA256).Hash
     Copy-Item -LiteralPath $pinsFile -Destination $backup -ErrorAction Stop
     $installedPins.additionalCurrentProfiles=@([pscustomobject]@{
         image=$newImage;config=$candidate;sha=$ApprovedConfigSha256.ToUpperInvariant()
+    })
+    $installedPins.recoveryProfiles=@($installedPins.recoveryProfiles)+@([pscustomobject]@{
+        image=$newImage;directory=$normalRecovery;manifestSha=$normalManifestSha
     })
     $temp=$pinsFile+'.tmp'
     try{

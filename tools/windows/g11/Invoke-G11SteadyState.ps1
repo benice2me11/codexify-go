@@ -102,7 +102,7 @@ function Read-G11Snapshot($Pins,[string]$Uri) {
         }catch{$health='unhealthy'}
     }
     $scmText=(& sc.exe qfailure CodexifyGo 2>&1|Out-String)
-    $restarts=([regex]::Matches($scmText,'(?im)RESTART\s+--\s+Delay\s*=\s*(5000|15000|60000)\s+milliseconds').Count -ge 3)
+    $restarts=Test-G11SCMRecoveryPolicy -Text $scmText
     return [pscustomobject]@{
         ProbeError='';ServiceState=[string]$service.State;ImageKind=$profile
         RustCount=$rust.Count;RustTasksDisabled=$rustDisabled;GoCount=$go.Count
@@ -253,6 +253,26 @@ try {
             $_.Name -in @('codexify-go.exe','tunnel-client-runtime.exe','codexify.exe')
         })
         $newG10=Get-ScheduledTask -TaskName 'CodexifyGo-G10Observers' -ErrorAction SilentlyContinue
+        # The frozen operator-v6 manifest only accepts its original
+        # diagnostic-enabled ImagePath. Each explicitly approved G11 config
+        # instead has its own protected, SHA-pinned Go-only v1 recovery
+        # manifest. This prevents a diagnostics-off update from silently
+        # invalidating rollback or modifying the historical v6 transaction.
+        $recoveryProfile=Get-G11RecoveryProfile -Profiles $pins.recoveryProfiles -SCMImage ([string]$again.PathName)
+        $recoveryManifestPath=Join-Path ([string]$recoveryProfile.directory) 'manifest.json'
+        Assert-ProtectedPath ([string]$recoveryProfile.directory)
+        if((Get-Hash $recoveryManifestPath) -ne [string]$recoveryProfile.manifestSha){
+            throw 'Protected G11 recovery manifest SHA mismatch'
+        }
+        $recoveryManifest=Get-Content -LiteralPath $recoveryManifestPath -Raw|ConvertFrom-Json
+        if([int]$recoveryManifest.version -ne 1 -or
+            [string]$recoveryManifest.serviceName -ne 'CodexifyGo' -or
+            [string]$recoveryManifest.newImage -cne [string]$again.PathName -or
+            [string]$recoveryManifest.oldExe -cne [string]$pins.previousExecutable -or
+            [string]$recoveryManifest.oldSha -cne [string]$pins.previousSha -or
+            [string]$recoveryManifest.originalImage -cne [string]$pins.previousImage){
+            throw 'G11 recovery manifest does not match approved previous-Go identity'
+        }
         if(($again.State -eq 'Running' -and [int]$again.ProcessId -gt 0) -or
             $goNow.Count -gt 0 -or
             ($newG10 -and [string]$newG10.State -ne 'Disabled')){
@@ -269,7 +289,7 @@ try {
             $next.recoveryAttemptedUtc=[DateTimeOffset]::UtcNow.ToString('o')
             Write-G11Event -File $eventsFile -Action 'RECOVER_GO_STARTED' -Reason $decision.reason
             Write-G11State -Path $stateFile -State $next
-            & $pins.recoveryScript -TransactionDirectory $pins.transactionDirectory -Reason 'go_supervisor_unavailable' -Execute | Out-Null
+            & $pins.recoveryScript -TransactionDirectory $recoveryProfile.directory -Reason 'go_supervisor_unavailable' -Execute | Out-Null
             if($LASTEXITCODE -and $LASTEXITCODE -ne 0){throw 'Go-only recovery process returned a nonzero exit code'}
             $serviceMutated=$true
             $decision.action='RECOVER_GO_INVOKED'

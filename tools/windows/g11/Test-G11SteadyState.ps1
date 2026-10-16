@@ -22,6 +22,16 @@ $healthy=[pscustomobject]@{
 $now=[DateTimeOffset]::Parse('2026-10-16T09:00:00Z')
 function Decide($S){Get-G11Decision -Snapshot $S -Now $now}
 Assert ((Decide $healthy).action -eq 'CONTINUE') 'normal Go'
+$scmOutput=@'
+SERVICE_NAME: CodexifyGo
+RESET_PERIOD (in seconds)    : 86400
+FAILURE_ACTIONS : RESTART -- Delay = 5000 milliseconds.
+                  RESTART -- Delay = 15000 milliseconds.
+                  RESTART -- Delay = 60000 milliseconds.
+'@
+Assert (Test-G11SCMRecoveryPolicy -Text $scmOutput) 'SCM recovery 5/15/60s validated'
+Assert (!(Test-G11SCMRecoveryPolicy -Text $scmOutput.Replace('15000','5000'))) 'SCM duplicate delay rejected'
+Assert (!(Test-G11SCMRecoveryPolicy -Text $scmOutput.Replace('86400','0'))) 'SCM reset period pinned'
 $network=$healthy.PSObject.Copy()
 $network.Http403=100;$network.Http429=100;$network.Http503=100;$network.VpnDown=$true
 Assert ((Decide $network).action -eq 'CONTINUE') 'VPN/403/429/503 must not recover'
@@ -79,6 +89,19 @@ $d=Get-G11Decision -Snapshot $asset -PreviousState $state -Now $now.AddMinutes(6
 Assert ($d.action -eq 'HOLD') 'previous Go asset hash mismatch'
 $handover=Test-G11RecoveryHandover -G10TaskDisabled $true -G10WatcherCount 0 -RustTasksDisabled $true -OtherG11TaskCount 0 -AssetsVerified $true -ProgramDataProtected $true
 Assert $handover.ready 'valid one-owner handover'
+$recoveryProfiles=@(
+    [pscustomobject]@{image='"C:\fixture\codexify-go.exe" service run --config old.json';directory='previously-pinned-go-config'},
+    [pscustomobject]@{image='"C:\fixture\codexify-go.exe" service run --config normal.json';directory='diagnostics-disabled-config'}
+)
+Assert ((Get-G11RecoveryProfile -Profiles $recoveryProfiles -SCMImage $recoveryProfiles[0].image).directory -eq 'previously-pinned-go-config') 'original Go config maps to original pinned recovery'
+Assert ((Get-G11RecoveryProfile -Profiles $recoveryProfiles -SCMImage $recoveryProfiles[1].image).directory -eq 'diagnostics-disabled-config') 'normal Go config maps to its own pinned recovery'
+foreach($badProfiles in @(@($recoveryProfiles[0],$recoveryProfiles[0]),@($recoveryProfiles))){
+    $unknown='NOT_A_PINNED_IMAGE'
+    if($badProfiles.Count -eq 2 -and $badProfiles[0].image -ceq $badProfiles[1].image){$unknown=$badProfiles[0].image}
+    $denied=$false
+    try{Get-G11RecoveryProfile -Profiles $badProfiles -SCMImage $unknown|Out-Null}catch{$denied=$true}
+    Assert $denied 'duplicate and foreign SCM images must fail closed'
+}
 foreach($bad in @(
     @{G10TaskDisabled=$false},
     @{G10WatcherCount=1},
@@ -161,6 +184,12 @@ try{
         autoRustFallback=$false
     }
     $manifest|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $root 'manifest.json') -Encoding UTF8
+    # The shipped frozen v6 Go-only recovery executor must accept G11's
+    # dedicated minimal v1 manifest without executing any rollback.
+    $oldRecovery=Join-Path (Split-Path -Parent $dir) 'cutover-v2\Invoke-GoOnlyRecovery.ps1'
+    $oldPlan=& $oldRecovery -TransactionDirectory $root -Reason 'go_supervisor_unavailable'|ConvertFrom-Json
+    Assert ($oldPlan.decision -eq 'PLAN_ONLY' -and !$oldPlan.wouldMutate -and
+        $oldPlan.target -eq 'previous_go') 'G11 pinned mini-manifest compatible with frozen recovery executor'
     $installer=Join-Path $dir 'Manage-G11Task.ps1'
     $planned=& $installer -TransactionDirectory $root -Action InstallReadOnly|ConvertFrom-Json
     Assert ($planned.status -eq 'PLAN_ONLY' -and !$planned.serviceMutation -and !$planned.rustFallback) 'installer must default to inert plan'

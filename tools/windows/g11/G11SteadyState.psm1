@@ -181,4 +181,22 @@ function Test-G11RecoveryHandover {
     }
 }
 
-Export-ModuleMember -Function Get-G11Decision,Enter-G11Mutex,Exit-G11Mutex,Test-G11RecoveryHandover
+function Get-G11RecoveryProfile {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)]$Profiles,[Parameter(Mandatory)][string]$SCMImage)
+    $matches=@($Profiles|Where-Object {[string]$_.image -ceq $SCMImage})
+    if($matches.Count -ne 1){throw 'No uniquely pinned previous-Go recovery for SCM ImagePath'}
+    return $matches[0]
+}
+
+function Test-G11SCMRecoveryPolicy {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Text)
+    $delays=@([regex]::Matches($Text,'(?im)RESTART\s+--\s+Delay\s*=\s*(\d+)\s+milliseconds')|
+        ForEach-Object {[int]$_.Groups[1].Value})
+    return ($delays.Count -ge 3 -and
+        $delays[0] -eq 5000 -and $delays[1] -eq 15000 -and $delays[2] -eq 60000 -and
+        $Text -match '(?im)RESET_PERIOD\s*\(in seconds\)\s*:\s*86400\b')
+}
+
+Export-ModuleMember -Function Get-G11Decision,Enter-G11Mutex,Exit-G11Mutex,Test-G11RecoveryHandover,Get-G11RecoveryProfile,Test-G11SCMRecoveryPolicy

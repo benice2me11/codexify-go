@@ -128,7 +128,15 @@ func pgCall(t *testing.T, f *pgFixture, name string, args map[string]any) *mcp.C
 		t.Fatalf("%s transport: %v", name, err)
 	}
 	if result == nil || result.IsError {
-		t.Fatalf("%s failed: %+v", name, result)
+		var diagnostic string
+		if result != nil {
+			for _, item := range result.Content {
+				if message, ok := item.(*mcp.TextContent); ok {
+					diagnostic += message.Text + "\n"
+				}
+			}
+		}
+		t.Fatalf("%s failed: %s", name, diagnostic)
 	}
 	return result
 }

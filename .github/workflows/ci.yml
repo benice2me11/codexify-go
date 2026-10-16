@@ -48,6 +48,13 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: go run ./tools/forensics/setup-smoke "./codexify-go.exe"
+      - name: Isolated Project Groups compiled-worker restart smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          ext=""
+          if [[ "${{ runner.os }}" == Windows ]]; then ext=.exe; fi
+          go run ./tools/forensics/project-groups-smoke "./codexify-go${ext}"
 
   race:
     runs-on: ubuntu-latest

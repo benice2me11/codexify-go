@@ -16,6 +16,7 @@ import (
 type Manager struct {
 	cfg    config.MCPConfig
 	access *workspace.Root
+	groups *GroupRegistry
 	mu     sync.Mutex
 
 	transientMu       sync.RWMutex
@@ -25,28 +26,38 @@ type Manager struct {
 }
 
 type WorkspaceInfo struct {
-	Mode              string `json:"mode"`
-	AccessRoot        string `json:"accessRoot"`
-	SourceProjectRoot string `json:"sourceProjectRoot"`
-	ProjectRoot       string `json:"projectRoot"`
-	RepositoryURL     string `json:"repositoryUrl,omitempty"`
-	CheckoutCommit    string `json:"checkoutCommit,omitempty"`
-	Cloned            bool   `json:"cloned,omitempty"`
-	ManagedWorktree   bool   `json:"managedWorktree"`
-	WorktreeGitRoot   string `json:"worktreeGitRoot,omitempty"`
-	WorktreesRoot     string `json:"worktreesRoot,omitempty"`
-	WorktreeMode      string `json:"worktreeMode"`
-	NewlySelected     bool   `json:"newlySelected"`
-	BindingScope      string `json:"bindingScope"`
+	Mode                      string                   `json:"mode"`
+	AccessRoot                string                   `json:"accessRoot"`
+	SourceProjectRoot         string                   `json:"sourceProjectRoot"`
+	ProjectRoot               string                   `json:"projectRoot"`
+	RepositoryURL             string                   `json:"repositoryUrl,omitempty"`
+	CheckoutCommit            string                   `json:"checkoutCommit,omitempty"`
+	Cloned                    bool                     `json:"cloned,omitempty"`
+	ManagedWorktree           bool                     `json:"managedWorktree"`
+	WorktreeGitRoot           string                   `json:"worktreeGitRoot,omitempty"`
+	WorktreesRoot             string                   `json:"worktreesRoot,omitempty"`
+	WorktreeMode              string                   `json:"worktreeMode"`
+	NewlySelected             bool                     `json:"newlySelected"`
+	BindingScope              string                   `json:"bindingScope"`
+	GroupName                 string                   `json:"groupName,omitempty"`
+	PrimaryRepository         string                   `json:"primaryRepository,omitempty"`
+	ActiveRepository          string                   `json:"activeRepository,omitempty"`
+	EffectiveRepository       string                   `json:"effectiveRepository,omitempty"`
+	MembershipFingerprint     string                   `json:"membershipFingerprint,omitempty"`
+	Repositories              []GroupBindingRepository `json:"repositories,omitempty"`
+	Generation                uint64                   `json:"generation,omitempty"`
+	BindingEpoch              string                   `json:"bindingEpoch,omitempty"`
+	EffectiveCheckoutRevision uint64                   `json:"effectiveCheckoutRevision,omitempty"`
 }
 
 type StatusInfo struct {
-	MultiProject      bool           `json:"multiProject"`
-	AccessRoot        string         `json:"accessRoot"`
-	WorktreeMode      string         `json:"worktreeMode"`
-	Selected          bool           `json:"selected"`
-	AwaitingSelection bool           `json:"awaitingSelection"`
-	Workspace         *WorkspaceInfo `json:"workspace,omitempty"`
+	MultiProject         bool           `json:"multiProject"`
+	ProjectGroupsEnabled bool           `json:"projectGroupsEnabled,omitempty"`
+	AccessRoot           string         `json:"accessRoot"`
+	WorktreeMode         string         `json:"worktreeMode"`
+	Selected             bool           `json:"selected"`
+	AwaitingSelection    bool           `json:"awaitingSelection"`
+	Workspace            *WorkspaceInfo `json:"workspace,omitempty"`
 }
 
 func New(cfg config.MCPConfig) (*Manager, error) {
@@ -72,12 +83,27 @@ func New(cfg config.MCPConfig) (*Manager, error) {
 		// consistently for `git worktree add` destinations.
 		cfg.Worktrees.Root = workspace.NormalizePathIdentity(cfg.Worktrees.Root)
 	}
+	if cfg.ProjectGroupsEnabled {
+		// A configured path may be an alias (notably /var -> /private/var
+		// on macOS). Group binding identity and containment checks must
+		// compare canonical paths, including a not-yet-created worktrees root.
+		canonical, canonicalErr := workspace.Canonical(cfg.Worktrees.Root)
+		if canonicalErr != nil {
+			return nil, fmt.Errorf("canonicalize group worktrees root: %w", canonicalErr)
+		}
+		cfg.Worktrees.Root = canonical
+	}
 	if strings.TrimSpace(cfg.Worktrees.Mode) == "" {
 		cfg.Worktrees.Mode = "auto"
+	}
+	groups, err := NewGroupRegistry(access, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("initialize project groups: %w", err)
 	}
 	return &Manager{
 		cfg:               cfg,
 		access:            access,
+		groups:            groups,
 		transientBindings: make(map[string]Binding),
 		transientChanges:  make(map[string]WorkspaceChange),
 		transientHistory:  make(map[string][]Binding),
@@ -88,11 +114,21 @@ func (m *Manager) AccessRoot() *workspace.Root {
 	return m.access
 }
 
+// ListProjectGroups is catalog-only and never changes the conversation.
+func (m *Manager) ListProjectGroups() []GroupDefinition {
+	return m.groups.List()
+}
+
+func (m *Manager) ResolveProjectGroupSource(groupName, alias string) (ResolvedGroupSource, error) {
+	return m.groups.ResolveSource(groupName, alias)
+}
+
 func (m *Manager) Status(meta map[string]any) (StatusInfo, error) {
 	status := StatusInfo{
-		MultiProject: m.cfg.MultiProject,
-		AccessRoot:   m.access.Path(),
-		WorktreeMode: strings.ToLower(m.cfg.Worktrees.Mode),
+		MultiProject:         m.cfg.MultiProject,
+		ProjectGroupsEnabled: m.cfg.ProjectGroupsEnabled,
+		AccessRoot:           m.access.Path(),
+		WorktreeMode:         strings.ToLower(m.cfg.Worktrees.Mode),
 	}
 	if !m.cfg.MultiProject {
 		info := WorkspaceInfo{
@@ -132,7 +168,17 @@ func (m *Manager) Status(meta map[string]any) (StatusInfo, error) {
 }
 
 func (m *Manager) Workspace(meta map[string]any) (*workspace.Root, WorkspaceInfo, error) {
+	return m.WorkspaceFor(meta, "")
+}
+
+// WorkspaceFor resolves exactly one validated member before the handler
+// performs any file, shell or Git operation. Explicit routing never changes
+// the persisted active alias. Legacy chats accept only an empty alias.
+func (m *Manager) WorkspaceFor(meta map[string]any, repository string) (*workspace.Root, WorkspaceInfo, error) {
 	if !m.cfg.MultiProject {
+		if repository != "" {
+			return nil, WorkspaceInfo{}, errors.New("repository alias requires a project group binding")
+		}
 		return m.access, WorkspaceInfo{
 			Mode:              "project",
 			AccessRoot:        m.access.Path(),
@@ -152,6 +198,31 @@ func (m *Manager) Workspace(meta map[string]any) (*workspace.Root, WorkspaceInfo
 	}
 	if binding == nil {
 		return nil, WorkspaceInfo{}, errors.New("no project selected for this conversation; call list_projects then set_project_root")
+	}
+	if binding.Mode == "group" {
+		alias := binding.ActiveRepository
+		if strings.TrimSpace(repository) != "" {
+			alias = strings.ToLower(strings.TrimSpace(repository))
+		}
+		member, ok := boundGroupMember(*binding, alias)
+		if !ok {
+			return nil, WorkspaceInfo{}, fmt.Errorf("unknown repository alias %q", repository)
+		}
+		root, err := workspace.New(member.ProjectRoot)
+		if err != nil {
+			return nil, WorkspaceInfo{}, err
+		}
+		info := infoFromBinding(m, *binding, false)
+		info.SourceProjectRoot = member.SourceProjectRoot
+		info.ProjectRoot = member.ProjectRoot
+		info.ManagedWorktree = member.ManagedWorktree
+		info.WorktreeGitRoot = member.WorktreeGitRoot
+		info.EffectiveRepository = member.Alias
+		info.EffectiveCheckoutRevision = member.CheckoutRevision
+		return root, info, nil
+	}
+	if repository != "" {
+		return nil, WorkspaceInfo{}, errors.New("repository alias requires a project group binding")
 	}
 	root, err := workspace.New(binding.ProjectRoot)
 	if err != nil {
@@ -186,6 +257,9 @@ func (m *Manager) Select(meta map[string]any, selector string, createWorktree *b
 	existing, err := m.readBinding(identity)
 	if err != nil {
 		return WorkspaceInfo{}, err
+	}
+	if existing != nil && existing.Mode == "group" {
+		return WorkspaceInfo{}, errors.New("conversation is bound to a project group; use set_active_repository or explicitly switch the workspace")
 	}
 
 	var (
@@ -330,7 +404,7 @@ func infoFromBinding(m *Manager, binding Binding, newly bool) WorkspaceInfo {
 	if scope == "" {
 		scope = "chatgpt_conversation"
 	}
-	return WorkspaceInfo{
+	info := WorkspaceInfo{
 		Mode:              mode,
 		AccessRoot:        m.access.Path(),
 		SourceProjectRoot: binding.SourceProjectRoot,
@@ -345,6 +419,28 @@ func infoFromBinding(m *Manager, binding Binding, newly bool) WorkspaceInfo {
 		NewlySelected:     newly,
 		BindingScope:      scope,
 	}
+	if mode == "group" {
+		member, _ := boundGroupMember(binding, binding.ActiveRepository)
+		info.SourceProjectRoot = member.SourceProjectRoot
+		info.ProjectRoot = member.ProjectRoot
+		info.ManagedWorktree = member.ManagedWorktree
+		info.WorktreeGitRoot = member.WorktreeGitRoot
+		info.GroupName = binding.GroupName
+		info.PrimaryRepository = binding.PrimaryRepository
+		info.ActiveRepository = binding.ActiveRepository
+		info.EffectiveRepository = binding.ActiveRepository
+		info.MembershipFingerprint = binding.MembershipFingerprint
+		info.Repositories = append([]GroupBindingRepository(nil), binding.Repositories...)
+		for i := range info.Repositories {
+			if info.Repositories[i].CheckoutRevision == 0 {
+				info.Repositories[i].CheckoutRevision = 1
+			}
+		}
+		info.Generation = binding.Generation
+		info.EffectiveCheckoutRevision = member.CheckoutRevision
+	}
+	info.BindingEpoch = binding.CreatedAt
+	return info
 }
 
 func (m *Manager) ForgetTransportSession(sessionID string) {

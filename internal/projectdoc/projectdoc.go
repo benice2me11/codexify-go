@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/benice2me11/codexify-go/internal/config"
+	"github.com/benice2me11/codexify-go/internal/workspace"
 )
 
 const (
@@ -28,6 +29,20 @@ type Document struct {
 }
 
 func Load(workDir string, cfg config.ProjectDocConfig) Document {
+	return load(workDir, cfg, nil)
+}
+
+// LoadWithin preserves the legacy instruction precedence while refusing
+// AGENTS.md/override symlinks or ancestor roots outside the selected member.
+// It is used for group bindings; legacy single-project behavior is unchanged.
+func LoadWithin(root *workspace.Root, cfg config.ProjectDocConfig) Document {
+	if root == nil {
+		return Document{}
+	}
+	return load(root.Path(), cfg, root)
+}
+
+func load(workDir string, cfg config.ProjectDocConfig, confinement *workspace.Root) Document {
 	if cfg.MaxBytes <= 0 {
 		return Document{}
 	}
@@ -52,6 +67,17 @@ func Load(workDir string, cfg config.ProjectDocConfig) Document {
 		}
 		for _, name := range names {
 			path := filepath.Join(dir, name)
+			if confinement != nil {
+				rel, relErr := filepath.Rel(confinement.Path(), path)
+				if relErr != nil {
+					continue
+				}
+				resolved, resolveErr := confinement.Resolve(rel, false)
+				if resolveErr != nil {
+					continue
+				}
+				path = resolved
+			}
 			info, err := os.Stat(path)
 			if err != nil || !info.Mode().IsRegular() {
 				continue

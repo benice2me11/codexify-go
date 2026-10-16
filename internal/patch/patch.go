@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"unicode"
@@ -38,10 +39,11 @@ type Action struct {
 }
 
 type planned struct {
-	action   Action
-	source   string
-	dest     string
-	contents string
+	action         Action
+	source         string
+	dest           string
+	contents       string
+	sourceIdentity os.FileInfo
 }
 
 func Apply(root *workspace.Root, input string) (string, error) {
@@ -75,11 +77,15 @@ func Apply(root *workspace.Root, input string) (string, error) {
 			if err != nil || !info.Mode().IsRegular() {
 				return "", fmt.Errorf("patch does not apply: Delete File: %q does not exist as a regular file", action.Path)
 			}
+			_ = os.SameFile(info, info) // eager Windows file ID before later mutation
+			p.sourceIdentity = info
 		case "update":
 			info, err := os.Stat(source)
 			if err != nil || !info.Mode().IsRegular() {
 				return "", fmt.Errorf("patch does not apply: Update File: %q does not exist as a regular file", action.Path)
 			}
+			_ = os.SameFile(info, info)
+			p.sourceIdentity = info
 			original, err := os.ReadFile(source)
 			if err != nil {
 				return "", fmt.Errorf("patch does not apply: read %s: %w", action.Path, err)
@@ -105,9 +111,15 @@ func Apply(root *workspace.Root, input string) (string, error) {
 	for _, p := range plans {
 		action := p.action
 		var err error
+		if err := revalidatePlanned(root, p); err != nil {
+			return "", fmt.Errorf("patch destination changed before applying %s: %w", actionLabel(action), err)
+		}
 		switch action.Kind {
 		case "add":
 			err = ensureParent(p.source)
+			if err == nil {
+				err = revalidatePlanned(root, p)
+			}
 			if err == nil {
 				err = os.WriteFile(p.source, []byte(p.contents), 0o644)
 			}
@@ -122,6 +134,9 @@ func Apply(root *workspace.Root, input string) (string, error) {
 		case "update":
 			if p.dest != "" && filepath.Clean(p.dest) != filepath.Clean(p.source) {
 				err = ensureParent(p.dest)
+				if err == nil {
+					err = revalidatePlanned(root, p)
+				}
 				if err == nil {
 					err = os.WriteFile(p.dest, []byte(p.contents), 0o644)
 				}
@@ -150,6 +165,34 @@ func Apply(root *workspace.Root, input string) (string, error) {
 		}
 	}
 	return "Patch applied:\n" + strings.Join(summary, "\n"), nil
+}
+
+func revalidatePlanned(root *workspace.Root, p planned) error {
+	resolved, err := root.Resolve(filepath.FromSlash(p.action.Path), p.action.Kind == "add")
+	if err != nil || !sameCanonicalPath(resolved, p.source) {
+		return errors.New("source path is no longer within the selected checkout")
+	}
+	if p.sourceIdentity != nil {
+		info, err := os.Stat(resolved)
+		if err != nil || !os.SameFile(p.sourceIdentity, info) {
+			return errors.New("source file identity changed after patch verification")
+		}
+	}
+	if p.dest != "" {
+		resolved, err := root.Resolve(filepath.FromSlash(p.action.MovePath), true)
+		if err != nil || !sameCanonicalPath(resolved, p.dest) {
+			return errors.New("move destination is no longer within the selected checkout")
+		}
+	}
+	return nil
+}
+
+func sameCanonicalPath(a, b string) bool {
+	a, b = filepath.Clean(a), filepath.Clean(b)
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
 }
 
 func Parse(input string) ([]Action, error) {

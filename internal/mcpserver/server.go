@@ -149,6 +149,9 @@ func NewWithToken(cfg config.Config, logger *slog.Logger, token string) (*Runtim
 		log:       logger,
 	}
 	instructions := "Select a workspace before project work in multi-project mode, then call get_agent_brief once and follow the returned environment, saved state, skills, and AGENTS.md instructions. Connector version marker: " + schemaVersion
+	if cfg.MCP.ProjectGroupsEnabled {
+		instructions += " Project Groups are enabled: call list_project_groups and set_project_group for one conversation spanning several configured Git repositories. Tools with an optional repository alias route only that call; set_active_repository changes the implicit default. Always inspect the effective checkout identity before mutations. Shell commands use normal OS account permissions and are not sandboxed."
+	}
 	if cfg.AgentChat.Enabled {
 		instructions += " Markdown chat is enabled: use chat_write for user-facing Markdown chat messages, chat_read for new CHAT.md user text, and chat_await as the idle state; do not treat chat_write/chat_read as terminal actions."
 	}
@@ -178,7 +181,24 @@ func NewWithToken(cfg config.Config, logger *slog.Logger, token string) (*Runtim
 			if req == nil || req.Params == nil {
 				return nil, mcp.ResourceNotFoundError("")
 			}
-			return r.artifacts.Read(req.Params.URI)
+			meta := map[string]any(req.Params.Meta)
+			if projects.IdentityFromMeta(meta) == nil && req.Session != nil {
+				meta = projects.WithTransportSession(meta, req.Session.ID())
+			}
+			return r.artifacts.ReadAuthorized(req.Params.URI, func(owner artifacts.Owner) bool {
+				identity := projects.IdentityFromMeta(meta)
+				if identity == nil || identity.Key != owner.Conversation {
+					return false
+				}
+				root, selection, err := r.projects.WorkspaceFor(meta, owner.Repository)
+				return err == nil && selection.Mode == "group" &&
+					selection.GroupName == owner.Group &&
+					selection.EffectiveRepository == owner.Repository &&
+					selection.MembershipFingerprint == owner.Fingerprint &&
+					selection.BindingEpoch == owner.BindingEpoch &&
+					selection.EffectiveCheckoutRevision == owner.CheckoutRevision &&
+					root.Path() == owner.ProjectRoot
+			})
 		})
 	}
 	generatedSkillsDir := ""
@@ -403,9 +423,9 @@ func (r *Runtime) Handler() http.Handler {
 func (r *Runtime) registerTools() {
 	mcp.AddTool(r.server, &mcp.Tool{
 		Name:        "get_agent_brief",
-		Description: "Read the full operating brief for the active workspace: coding behavior, environment, saved state, available skills, and AGENTS.md project instructions. Call once after workspace selection and again after a workspace change or lost context.",
-	}, func(_ context.Context, req *mcp.CallToolRequest, _ EmptyInput) (*mcp.CallToolResult, TextOutput, error) {
-		content, err := r.agentBrief(req)
+		Description: "Read the operating brief for the selected repository, including its AGENTS.md, memory, skills, and checkout identity. An optional repository alias overrides the group's active member for this call only.",
+	}, func(_ context.Context, req *mcp.CallToolRequest, in RepositoryInput) (*mcp.CallToolResult, TextOutput, error) {
+		content, err := r.agentBrief(req, in.Repository)
 		return nil, TextOutput{Content: content}, err
 	})
 
@@ -417,7 +437,7 @@ func (r *Runtime) registerTools() {
 			Name:        "chat_read",
 			Description: "NON-TERMINAL TOOL. Read and acknowledge all new user text in this conversation's CHAT.md without truncation. Continue useful work afterward; if no work remains, use chat_await rather than ending the turn.",
 		}, func(_ context.Context, req *mcp.CallToolRequest, _ EmptyInput) (*mcp.CallToolResult, markdownchat.Result, error) {
-			root, _, err := r.workspaceFor(req)
+			root, _, err := r.chatWorkspaceFor(req)
 			if err != nil {
 				return nil, markdownchat.Result{}, err
 			}
@@ -431,7 +451,7 @@ func (r *Runtime) registerTools() {
 			Name:        "chat_write",
 			Description: "NON-TERMINAL TOOL. Append one complete Markdown message to this conversation's CHAT.md. This is the supported agent write path for Markdown chat; after writing, continue work or use chat_await.",
 		}, func(_ context.Context, req *mcp.CallToolRequest, in ChatWriteInput) (*mcp.CallToolResult, markdownchat.Result, error) {
-			root, _, err := r.workspaceFor(req)
+			root, _, err := r.chatWorkspaceFor(req)
 			if err != nil {
 				return nil, markdownchat.Result{}, err
 			}
@@ -458,6 +478,13 @@ func (r *Runtime) registerTools() {
 				if !status.Selected || status.Workspace == nil {
 					return "", identity, false, nil
 				}
+				if status.Workspace.Mode == "group" {
+					primary, rootErr := r.projects.ResolveProjectGroupSource(status.Workspace.GroupName, status.Workspace.PrimaryRepository)
+					if rootErr != nil {
+						return "", identity, false, rootErr
+					}
+					return primary.Root.Path(), identity, true, nil
+				}
 				return status.Workspace.ProjectRoot, identity, true, nil
 			})
 			return nil, out, err
@@ -475,16 +502,22 @@ func (r *Runtime) registerTools() {
 	mcp.AddTool(r.server, &mcp.Tool{
 		Name:        "get_project_doc",
 		Description: "Read AGENTS.override.md/AGENTS.md instructions from the project root down to the active workspace, outermost first, under a shared byte budget.",
-	}, func(_ context.Context, req *mcp.CallToolRequest, _ EmptyInput) (*mcp.CallToolResult, projectdoc.Document, error) {
-		root, _, err := r.workspaceFor(req)
+	}, func(_ context.Context, req *mcp.CallToolRequest, in RepositoryInput) (*mcp.CallToolResult, projectdoc.Document, error) {
+		root, selection, err := r.workspaceForRepository(req, in.Repository)
 		if err != nil {
 			return nil, projectdoc.Document{}, err
 		}
-		return nil, projectdoc.Load(root.Path(), r.cfg.ProjectDoc), nil
+		var doc projectdoc.Document
+		if selection.Mode == "group" {
+			doc = projectdoc.LoadWithin(root, r.cfg.ProjectDoc)
+		} else {
+			doc = projectdoc.Load(root.Path(), r.cfg.ProjectDoc)
+		}
+		return &mcp.CallToolResult{Meta: repositoryToolMeta(selection)}, doc, nil
 	})
 
 	mcp.AddTool(r.server, &mcp.Tool{
-		Meta:        ui.SetupToolMeta(),
+		Meta:        ui.SetupToolMetaForGroups(r.cfg.MCP.ProjectGroupsEnabled),
 		Name:        "setup",
 		Title:       "Open Codexify setup",
 		Description: "Open the workspace picker and return this conversation's selection state. The embedded card can select an explicit source checkout or managed worktree.",
@@ -516,6 +549,70 @@ func (r *Runtime) registerTools() {
 		out.AwaitingSelection = status.AwaitingSelection
 		return nil, out, nil
 	})
+
+	if r.cfg.MCP.ProjectGroupsEnabled {
+		mcp.AddTool(r.server, &mcp.Tool{
+			Meta:        ui.AppCallableToolMeta(),
+			Name:        "list_project_groups",
+			Description: "List configured project groups and their canonical source checkout identities. This is read-only; it does not switch the active workspace.",
+		}, func(_ context.Context, _ *mcp.CallToolRequest, _ ListProjectGroupsInput) (*mcp.CallToolResult, ProjectGroupsOutput, error) {
+			return nil, ProjectGroupsOutput{Groups: r.projects.ListProjectGroups()}, nil
+		})
+		mcp.AddTool(r.server, &mcp.Tool{
+			Meta:        ui.AppCallableToolMeta(),
+			Name:        "set_project_group",
+			Description: "Bind one configured group of independent Git repositories to this conversation, without global project-root switching. Requires explicit workspace switching first if a single-project binding already exists.",
+		}, func(_ context.Context, req *mcp.CallToolRequest, in SetProjectGroupInput) (*mcp.CallToolResult, projects.WorkspaceInfo, error) {
+			selection, err := r.projects.SelectGroupWithModes(r.requestMeta(req), in.Name, in.Checkouts)
+			if err != nil {
+				return nil, projects.WorkspaceInfo{}, err
+			}
+			for _, member := range selection.Repositories {
+				if err := r.diff.Ensure(member.ProjectRoot, r.diffOwner(req)); err != nil {
+					return nil, projects.WorkspaceInfo{}, fmt.Errorf("initialize diff baseline for %s: %w", member.Alias, err)
+				}
+			}
+			return nil, selection, nil
+		})
+		mcp.AddTool(r.server, &mcp.Tool{
+			Meta:        ui.AppCallableToolMeta(),
+			Name:        "set_active_repository",
+			Description: "Persist an active default repository alias within the already selected project group. Explicit repository arguments on other tools never update this default.",
+		}, func(_ context.Context, req *mcp.CallToolRequest, in SetActiveRepositoryInput) (*mcp.CallToolResult, projects.WorkspaceInfo, error) {
+			selection, err := r.projects.SetActiveRepository(r.requestMeta(req), in.Repository)
+			return nil, selection, err
+		})
+		mcp.AddTool(r.server, &mcp.Tool{
+			Meta:        ui.AppCallableToolMeta(),
+			Name:        "set_repository_checkout",
+			Description: "Explicitly change one bound group member between Source checkout and Managed worktree. Preserves all previously created managed worktrees, dirty files and other members without rebinding the conversation.",
+		}, func(_ context.Context, req *mcp.CallToolRequest, in SetRepositoryCheckoutInput) (*mcp.CallToolResult, projects.WorkspaceInfo, error) {
+			selection, err := r.projects.SetRepositoryCheckout(r.requestMeta(req), in.Repository, in.Checkout)
+			if err != nil {
+				return nil, projects.WorkspaceInfo{}, err
+			}
+			if memberRoot, _, err := r.projects.WorkspaceFor(r.requestMeta(req), in.Repository); err == nil {
+				if err := r.diff.Ensure(memberRoot.Path(), r.diffOwner(req)); err != nil {
+					return nil, projects.WorkspaceInfo{}, fmt.Errorf("checkout updated but diff baseline initialization failed: %w", err)
+				}
+			}
+			return nil, selection, nil
+		})
+		mcp.AddTool(r.server, &mcp.Tool{
+			Meta:        ui.AppCallableToolMeta(),
+			Name:        "get_project_group_status",
+			Description: "Return the selected group's aliases, source and active checkout roots, checkout modes, active default and generation.",
+		}, func(_ context.Context, req *mcp.CallToolRequest, _ GetProjectGroupStatusInput) (*mcp.CallToolResult, projects.WorkspaceInfo, error) {
+			status, err := r.projects.Status(r.requestMeta(req))
+			if err != nil {
+				return nil, projects.WorkspaceInfo{}, err
+			}
+			if status.Workspace == nil || status.Workspace.Mode != "group" {
+				return nil, projects.WorkspaceInfo{}, errors.New("no project group is selected for this conversation")
+			}
+			return nil, *status.Workspace, nil
+		})
+	}
 
 	mcp.AddTool(r.server, &mcp.Tool{
 		Meta:        ui.AppCallableToolMeta(),
@@ -572,16 +669,16 @@ func (r *Runtime) registerTools() {
 	mcp.AddTool(r.server, &mcp.Tool{
 		Name:        "list_worktrees",
 		Description: "List Git worktrees belonging to the project selected for this conversation.",
-	}, func(_ context.Context, req *mcp.CallToolRequest, _ EmptyInput) (*mcp.CallToolResult, projects.WorktreeListOutput, error) {
-		out, err := r.projects.ListWorktrees(r.requestMeta(req))
+	}, func(_ context.Context, req *mcp.CallToolRequest, in RepositoryInput) (*mcp.CallToolResult, projects.WorktreeListOutput, error) {
+		out, err := r.projects.ListWorktreesFor(r.requestMeta(req), in.Repository)
 		return nil, out, err
 	})
 
 	mcp.AddTool(r.server, &mcp.Tool{
 		Name:        "get_environment",
 		Description: "Return the active workspace root, platform, and default shell.",
-	}, func(_ context.Context, req *mcp.CallToolRequest, _ EmptyInput) (*mcp.CallToolResult, EnvironmentOutput, error) {
-		root, selection, err := r.workspaceFor(req)
+	}, func(_ context.Context, req *mcp.CallToolRequest, in RepositoryInput) (*mcp.CallToolResult, EnvironmentOutput, error) {
+		root, selection, err := r.workspaceForRepository(req, in.Repository)
 		if err != nil {
 			return nil, EnvironmentOutput{}, err
 		}
@@ -594,101 +691,132 @@ func (r *Runtime) registerTools() {
 			username = current.Username
 		}
 		return nil, EnvironmentOutput{
-			Platform:        runtime.GOOS + "/" + runtime.GOARCH,
-			WorkspaceRoot:   root.Path(),
-			AccessRoot:      selection.AccessRoot,
-			ManagedWorktree: selection.ManagedWorktree,
-			BindingScope:    selection.BindingScope,
-			DefaultShell:    shell,
-			Username:        username,
+			Platform:            runtime.GOOS + "/" + runtime.GOARCH,
+			WorkspaceRoot:       root.Path(),
+			AccessRoot:          selection.AccessRoot,
+			ManagedWorktree:     selection.ManagedWorktree,
+			BindingScope:        selection.BindingScope,
+			DefaultShell:        shell,
+			Username:            username,
+			GroupName:           selection.GroupName,
+			PrimaryRepository:   selection.PrimaryRepository,
+			ActiveRepository:    selection.ActiveRepository,
+			EffectiveRepository: selection.EffectiveRepository,
+			Repositories:        selection.Repositories,
 		}, nil
 	})
 
 	mcp.AddTool(r.server, &mcp.Tool{
 		Name:        "recall",
 		Description: "Return durable memory notes saved for the active project/workspace by earlier turns or conversations.",
-	}, func(_ context.Context, req *mcp.CallToolRequest, _ EmptyInput) (*mcp.CallToolResult, TextOutput, error) {
-		root, _, err := r.workspaceFor(req)
+	}, func(_ context.Context, req *mcp.CallToolRequest, in RepositoryInput) (*mcp.CallToolResult, TextOutput, error) {
+		root, selection, err := r.workspaceForRepository(req, in.Repository)
 		if err != nil {
 			return nil, TextOutput{}, err
 		}
 		content, err := r.memory.Recall(root.Path())
-		return nil, TextOutput{Content: content}, err
+		return nil, TextOutput{Content: content, Repository: repositoryContext(selection)}, err
 	})
 
 	mcp.AddTool(r.server, &mcp.Tool{
 		Name:        "remember",
 		Description: "Create one durable note for the active project/workspace under a new short key; refuses to overwrite an existing key.",
 	}, func(_ context.Context, req *mcp.CallToolRequest, in MemoryNoteInput) (*mcp.CallToolResult, TextOutput, error) {
-		root, _, err := r.workspaceFor(req)
+		root, selection, err := r.workspaceForRepository(req, in.Repository)
 		if err != nil {
 			return nil, TextOutput{}, err
 		}
 		content, err := r.memory.Create(root.Path(), in.Key, in.Value)
-		return nil, TextOutput{Content: content}, err
+		return nil, TextOutput{Content: content, Repository: repositoryContext(selection)}, err
 	})
 
 	mcp.AddTool(r.server, &mcp.Tool{
 		Name:        "update_memory_note",
 		Description: "Replace one existing durable project-memory note without creating a missing key.",
 	}, func(_ context.Context, req *mcp.CallToolRequest, in MemoryNoteInput) (*mcp.CallToolResult, TextOutput, error) {
-		root, _, err := r.workspaceFor(req)
+		root, selection, err := r.workspaceForRepository(req, in.Repository)
 		if err != nil {
 			return nil, TextOutput{}, err
 		}
 		content, err := r.memory.Update(root.Path(), in.Key, in.Value)
-		return nil, TextOutput{Content: content}, err
+		return nil, TextOutput{Content: content, Repository: repositoryContext(selection)}, err
 	})
 
 	mcp.AddTool(r.server, &mcp.Tool{
 		Name:        "forget_memory_note",
 		Description: "Delete one existing durable project-memory note by key.",
 	}, func(_ context.Context, req *mcp.CallToolRequest, in ForgetMemoryInput) (*mcp.CallToolResult, TextOutput, error) {
-		root, _, err := r.workspaceFor(req)
+		root, selection, err := r.workspaceForRepository(req, in.Repository)
 		if err != nil {
 			return nil, TextOutput{}, err
 		}
 		content, err := r.memory.Delete(root.Path(), in.Key)
-		return nil, TextOutput{Content: content}, err
+		return nil, TextOutput{Content: content, Repository: repositoryContext(selection)}, err
 	})
 
 	mcp.AddTool(r.server, &mcp.Tool{
 		Name:        "skills_list",
 		Description: "List instruction skills available for the active project/workspace and user skill roots.",
-	}, func(_ context.Context, req *mcp.CallToolRequest, _ EmptyInput) (*mcp.CallToolResult, skills.Catalog, error) {
-		root, _, err := r.workspaceFor(req)
+	}, func(_ context.Context, req *mcp.CallToolRequest, in RepositoryInput) (*mcp.CallToolResult, skills.Catalog, error) {
+		root, selection, err := r.workspaceForRepository(req, in.Repository)
 		if err != nil {
 			return nil, skills.Catalog{}, err
 		}
-		out, err := r.skills.List(root.Path())
-		return nil, out, err
+		var out skills.Catalog
+		if selection.Mode == "group" {
+			out, err = r.skills.ListWithin(root)
+		} else {
+			out, err = r.skills.List(root.Path())
+		}
+		return &mcp.CallToolResult{Meta: repositoryToolMeta(selection)}, out, err
 	})
 
 	mcp.AddTool(r.server, &mcp.Tool{
 		Name:        "skills_read",
 		Description: "Read a selected skill's SKILL.md or one package-relative resource with line-window pagination.",
 	}, func(_ context.Context, req *mcp.CallToolRequest, in skills.ReadInput) (*mcp.CallToolResult, skills.ReadOutput, error) {
-		root, _, err := r.workspaceFor(req)
+		root, selection, err := r.workspaceForRepository(req, in.Repository)
 		if err != nil {
 			return nil, skills.ReadOutput{}, err
 		}
-		out, err := r.skills.Read(root.Path(), in)
-		return nil, out, err
+		var out skills.ReadOutput
+		if selection.Mode == "group" {
+			out, err = r.skills.ReadWithin(root, in)
+		} else {
+			out, err = r.skills.Read(root.Path(), in)
+		}
+		return &mcp.CallToolResult{Meta: repositoryToolMeta(selection)}, out, err
 	})
 
 	mcp.AddTool(r.server, &mcp.Tool{
 		Name:        "export_host_file",
 		Description: "Export one existing file from the active workspace as an opaque downloadable MCP resource without exposing a local filesystem path.",
 	}, func(_ context.Context, req *mcp.CallToolRequest, in ExportHostFileInput) (*mcp.CallToolResult, artifacts.Receipt, error) {
-		root, _, err := r.workspaceFor(req)
+		root, selection, err := r.workspaceForRepository(req, in.Repository)
 		if err != nil {
 			return nil, artifacts.Receipt{}, err
 		}
-		link, receipt, err := r.artifacts.Export(root, in.Path)
+		var owner *artifacts.Owner
+		if selection.Mode == "group" {
+			identity := projects.IdentityFromMeta(r.requestMeta(req))
+			if identity == nil {
+				return nil, artifacts.Receipt{}, errors.New("grouped artifact export requires a conversation identity")
+			}
+			owner = &artifacts.Owner{
+				Conversation:     identity.Key,
+				Group:            selection.GroupName,
+				Repository:       selection.EffectiveRepository,
+				ProjectRoot:      root.Path(),
+				Fingerprint:      selection.MembershipFingerprint,
+				BindingEpoch:     selection.BindingEpoch,
+				CheckoutRevision: selection.EffectiveCheckoutRevision,
+			}
+		}
+		link, receipt, err := r.artifacts.ExportScoped(root, in.Path, owner)
 		if err != nil {
 			return nil, artifacts.Receipt{}, err
 		}
-		return &mcp.CallToolResult{Content: []mcp.Content{link}}, receipt, nil
+		return &mcp.CallToolResult{Content: []mcp.Content{link}, Meta: repositoryToolMeta(selection)}, receipt, nil
 	})
 
 	mcp.AddTool(r.server, &mcp.Tool{
@@ -700,26 +828,27 @@ func (r *Runtime) registerTools() {
 		Name:        "import_host_file",
 		Description: "Import one user-attached or ChatGPT-generated native file into a new path in the active workspace. The host supplies a temporary authorized file reference; arbitrary local source paths are not accepted and existing destinations are never overwritten.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in ImportHostFileInput) (*mcp.CallToolResult, ingress.Receipt, error) {
-		if err := r.prepareMutation(req); err != nil {
+		if err := r.prepareMutation(req, in.Repository); err != nil {
 			return nil, ingress.Receipt{}, err
 		}
-		root, _, err := r.workspaceFor(req)
+		root, selection, err := r.workspaceForRepository(req, in.Repository)
 		if err != nil {
 			return nil, ingress.Receipt{}, err
 		}
 		out, err := r.ingress.Import(ctx, root, in.File, in.Path)
-		return nil, out, err
+		return &mcp.CallToolResult{Meta: repositoryToolMeta(selection)}, out, err
 	})
 
 	mcp.AddTool(r.server, &mcp.Tool{
 		Name:        "read_file",
 		Description: "Read a UTF-8 text file inside the workspace with line numbers.",
 	}, func(_ context.Context, req *mcp.CallToolRequest, in agenttools.ReadFileInput) (*mcp.CallToolResult, agenttools.ReadFileOutput, error) {
-		files, err := r.filesFor(req)
+		files, selected, err := r.filesFor(req, in.Repository)
 		if err != nil {
 			return nil, agenttools.ReadFileOutput{}, err
 		}
 		out, err := files.ReadFile(in)
+		out.Repository = selected
 		return nil, out, err
 	})
 
@@ -727,14 +856,15 @@ func (r *Runtime) registerTools() {
 		Name:        "write_file",
 		Description: "Create or replace a UTF-8 text file inside the workspace. Parent directories are created automatically.",
 	}, func(_ context.Context, req *mcp.CallToolRequest, in agenttools.WriteFileInput) (*mcp.CallToolResult, agenttools.WriteFileOutput, error) {
-		if err := r.prepareMutation(req); err != nil {
+		if err := r.prepareMutation(req, in.Repository); err != nil {
 			return nil, agenttools.WriteFileOutput{}, err
 		}
-		files, err := r.filesFor(req)
+		files, selected, err := r.filesFor(req, in.Repository)
 		if err != nil {
 			return nil, agenttools.WriteFileOutput{}, err
 		}
 		out, err := files.WriteFile(in)
+		out.Repository = selected
 		return nil, out, err
 	})
 
@@ -742,26 +872,27 @@ func (r *Runtime) registerTools() {
 		Name:        "apply_patch",
 		Description: "Apply targeted edits with Codex patch grammar. The complete patch and all file contexts are verified before the first write; paths are confined to the active workspace.",
 	}, func(_ context.Context, req *mcp.CallToolRequest, in ApplyPatchInput) (*mcp.CallToolResult, TextOutput, error) {
-		if err := r.prepareMutation(req); err != nil {
+		if err := r.prepareMutation(req, in.Repository); err != nil {
 			return nil, TextOutput{}, err
 		}
-		root, _, err := r.workspaceFor(req)
+		root, selection, err := r.workspaceForRepository(req, in.Repository)
 		if err != nil {
 			return nil, TextOutput{}, err
 		}
 		content, err := patchtool.Apply(root, in.Input)
-		return nil, TextOutput{Content: content}, err
+		return nil, TextOutput{Content: content, Repository: repositoryContext(selection)}, err
 	})
 
 	mcp.AddTool(r.server, &mcp.Tool{
 		Name:        "glob",
 		Description: "Find files inside the workspace using glob patterns including double-star recursion.",
 	}, func(_ context.Context, req *mcp.CallToolRequest, in agenttools.GlobInput) (*mcp.CallToolResult, agenttools.GlobOutput, error) {
-		files, err := r.filesFor(req)
+		files, selected, err := r.filesFor(req, in.Repository)
 		if err != nil {
 			return nil, agenttools.GlobOutput{}, err
 		}
 		out, err := files.Glob(in)
+		out.Repository = selected
 		return nil, out, err
 	})
 
@@ -769,11 +900,12 @@ func (r *Runtime) registerTools() {
 		Name:        "grep",
 		Description: "Search text files inside the workspace with an RE2 regular expression.",
 	}, func(_ context.Context, req *mcp.CallToolRequest, in agenttools.GrepInput) (*mcp.CallToolResult, agenttools.GrepOutput, error) {
-		files, err := r.filesFor(req)
+		files, selected, err := r.filesFor(req, in.Repository)
 		if err != nil {
 			return nil, agenttools.GrepOutput{}, err
 		}
 		out, err := files.Grep(in)
+		out.Repository = selected
 		return nil, out, err
 	})
 
@@ -791,11 +923,12 @@ func (r *Runtime) registerTools() {
 		Name:        "git_status",
 		Description: "Show concise Git working-tree and branch status for the workspace.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in agenttools.GitStatusInput) (*mcp.CallToolResult, agenttools.GitOutput, error) {
-		git, err := r.gitFor(req)
+		git, selected, err := r.gitFor(req, in.Repository)
 		if err != nil {
 			return nil, agenttools.GitOutput{}, err
 		}
 		out, err := git.Status(ctx, in)
+		out.Repository = selected
 		return nil, out, err
 	})
 
@@ -803,11 +936,12 @@ func (r *Runtime) registerTools() {
 		Name:        "git_diff",
 		Description: "Show the workspace Git diff without external diff helpers or color.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in agenttools.GitDiffInput) (*mcp.CallToolResult, agenttools.GitOutput, error) {
-		git, err := r.gitFor(req)
+		git, selected, err := r.gitFor(req, in.Repository)
 		if err != nil {
 			return nil, agenttools.GitOutput{}, err
 		}
 		out, err := git.Diff(ctx, in)
+		out.Repository = selected
 		return nil, out, err
 	})
 
@@ -816,7 +950,7 @@ func (r *Runtime) registerTools() {
 		Name:        "show_diff",
 		Description: "Present a project-scoped diff against the immutable project-open checkpoint or incremental last-diff checkpoint. By default advances only the private last-diff cursor; it does not modify project files or Git history.",
 	}, func(_ context.Context, req *mcp.CallToolRequest, in ShowDiffInput) (*mcp.CallToolResult, ShowDiffOutput, error) {
-		root, _, err := r.workspaceFor(req)
+		root, selection, err := r.workspaceForRepository(req, in.Repository)
 		if err != nil {
 			return nil, ShowDiffOutput{}, err
 		}
@@ -841,6 +975,7 @@ func (r *Runtime) registerTools() {
 			return nil, ShowDiffOutput{}, err
 		}
 		output := ShowDiffOutput{
+			Repository:         repositoryContext(selection),
 			Content:            result.RenderText(),
 			Since:              string(result.Since),
 			CheckpointAdvanced: result.CheckpointAdvanced,
@@ -850,8 +985,12 @@ func (r *Runtime) registerTools() {
 			FilesOmitted:       result.FilesOmitted,
 			Warnings:           result.Warnings,
 		}
+		metadata := mcp.Meta{"io.github.devnoname120/codexify/diff": result}
+		if selected := repositoryContext(selection); selected != nil {
+			metadata["io.github.devnoname120/codexify/repository"] = selected
+		}
 		return &mcp.CallToolResult{
-			Meta:    mcp.Meta{"io.github.devnoname120/codexify/diff": result},
+			Meta:    metadata,
 			Content: []mcp.Content{&mcp.TextContent{Text: result.RenderText()}},
 		}, output, nil
 	})
@@ -860,11 +999,12 @@ func (r *Runtime) registerTools() {
 		Name:        "git_log",
 		Description: "Show recent Git commits for the workspace.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in agenttools.GitLogInput) (*mcp.CallToolResult, agenttools.GitOutput, error) {
-		git, err := r.gitFor(req)
+		git, selected, err := r.gitFor(req, in.Repository)
 		if err != nil {
 			return nil, agenttools.GitOutput{}, err
 		}
 		out, err := git.Log(ctx, in)
+		out.Repository = selected
 		return nil, out, err
 	})
 }
@@ -883,6 +1023,16 @@ func (r *Runtime) registerUIResources() {
 		{ui.DiffURI, "codexify-go-diff", "Codexify Go diff", "Compact working-tree diff viewer.", ui.DiffHTML},
 		{ui.ChatURI, "codexify-go-markdown-chat", "Codexify Go Markdown chat", "Conversation-specific CHAT.md reader and composer.", ui.ChatHTML},
 		{ui.UpdateURI, "codexify-go-self-update", "Codexify Go update status", "Read-only release/update status app.", ui.UpdateHTML},
+	}
+	if r.cfg.MCP.ProjectGroupsEnabled {
+		resources = append(resources, struct {
+			uri         string
+			name        string
+			title       string
+			description string
+			html        string
+		}{ui.GroupSetupURI, "codexify-go-group-setup", "Codexify Go group setup",
+			"Project Groups, member routing and checkout selection.", ui.SetupHTML})
 	}
 	for _, item := range resources {
 		item := item
@@ -910,6 +1060,10 @@ func (r *Runtime) registerUIResources() {
 
 type EmptyInput struct{}
 
+type RepositoryInput struct {
+	Repository string `json:"repository,omitempty" jsonschema:"optional project-group repository alias; defaults to the active repository"`
+}
+
 type ChatWriteInput struct {
 	Message string `json:"message" jsonschema:"complete Markdown message to append to this conversation's CHAT.md"`
 }
@@ -922,6 +1076,35 @@ type ListProjectsInput struct {
 	UIContext string `json:"uiContext,omitempty" jsonschema:"opaque context supplied by the workspace card; omit for model calls"`
 	Query     string `json:"query,omitempty" jsonschema:"optional case-insensitive filter over project name, selector, and description"`
 	Limit     int    `json:"limit,omitempty" jsonschema:"maximum projects to return, default 50 and maximum 200"`
+}
+
+type ProjectGroupsOutput struct {
+	Groups []projects.GroupDefinition `json:"groups"`
+}
+
+type ListProjectGroupsInput struct {
+	UIContext string `json:"uiContext,omitempty" jsonschema:"opaque context supplied by the workspace card; omit for model calls"`
+}
+
+type SetProjectGroupInput struct {
+	UIContext string            `json:"uiContext,omitempty" jsonschema:"opaque context supplied by the workspace card; omit for model calls"`
+	Name      string            `json:"name" jsonschema:"configured project group name"`
+	Checkouts map[string]string `json:"checkouts,omitempty" jsonschema:"optional explicit alias-to-checkout selections: source or managed"`
+}
+
+type SetActiveRepositoryInput struct {
+	UIContext  string `json:"uiContext,omitempty" jsonschema:"opaque context supplied by the workspace card; omit for model calls"`
+	Repository string `json:"repository" jsonschema:"member alias to make active by default"`
+}
+
+type SetRepositoryCheckoutInput struct {
+	UIContext  string `json:"uiContext,omitempty" jsonschema:"opaque context supplied by the workspace card; omit for model calls"`
+	Repository string `json:"repository" jsonschema:"existing group member alias"`
+	Checkout   string `json:"checkout" jsonschema:"source or managed checkout kind"`
+}
+
+type GetProjectGroupStatusInput struct {
+	UIContext string `json:"uiContext,omitempty" jsonschema:"opaque context supplied by the workspace card; omit for model calls"`
 }
 
 type SetProjectRootInput struct {
@@ -938,30 +1121,37 @@ type SwitchProjectInput struct {
 }
 
 type EnvironmentOutput struct {
-	Platform        string `json:"platform"`
-	WorkspaceRoot   string `json:"workspaceRoot"`
-	AccessRoot      string `json:"accessRoot"`
-	ManagedWorktree bool   `json:"managedWorktree"`
-	BindingScope    string `json:"bindingScope"`
-	DefaultShell    string `json:"defaultShell"`
-	Username        string `json:"username"`
+	Platform            string                            `json:"platform"`
+	WorkspaceRoot       string                            `json:"workspaceRoot"`
+	AccessRoot          string                            `json:"accessRoot"`
+	ManagedWorktree     bool                              `json:"managedWorktree"`
+	BindingScope        string                            `json:"bindingScope"`
+	DefaultShell        string                            `json:"defaultShell"`
+	Username            string                            `json:"username"`
+	GroupName           string                            `json:"groupName,omitempty"`
+	PrimaryRepository   string                            `json:"primaryRepository,omitempty"`
+	ActiveRepository    string                            `json:"activeRepository,omitempty"`
+	EffectiveRepository string                            `json:"effectiveRepository,omitempty"`
+	Repositories        []projects.GroupBindingRepository `json:"repositories,omitempty"`
 }
 
 type SetupStatusOutput struct {
-	Version             string                  `json:"version"`
-	ConnectorVersion    string                  `json:"connectorVersion"`
-	ConversationVersion string                  `json:"conversationVersion,omitempty"`
-	ConversationStale   bool                    `json:"conversationStale"`
-	ConnectorSchema     ConnectorSchemaInfo     `json:"connectorSchema"`
-	Update              selfupdate.Inspection   `json:"update"`
-	UpdateCheckMS       int64                   `json:"updateCheckMs"`
-	MultiProject        bool                    `json:"multiProject"`
-	AccessRoot          string                  `json:"accessRoot"`
-	WorktreeMode        string                  `json:"worktreeMode"`
-	Selected            bool                    `json:"selected"`
-	AwaitingSelection   bool                    `json:"awaitingSelection"`
-	Workspace           *projects.WorkspaceInfo `json:"workspace,omitempty"`
-	Projects            *projects.ListOutput    `json:"projects,omitempty"`
+	Version              string                     `json:"version"`
+	ConnectorVersion     string                     `json:"connectorVersion"`
+	ConversationVersion  string                     `json:"conversationVersion,omitempty"`
+	ConversationStale    bool                       `json:"conversationStale"`
+	ConnectorSchema      ConnectorSchemaInfo        `json:"connectorSchema"`
+	Update               selfupdate.Inspection      `json:"update"`
+	UpdateCheckMS        int64                      `json:"updateCheckMs"`
+	MultiProject         bool                       `json:"multiProject"`
+	ProjectGroupsEnabled bool                       `json:"projectGroupsEnabled,omitempty"`
+	Groups               []projects.GroupDefinition `json:"groups,omitempty"`
+	AccessRoot           string                     `json:"accessRoot"`
+	WorktreeMode         string                     `json:"worktreeMode"`
+	Selected             bool                       `json:"selected"`
+	AwaitingSelection    bool                       `json:"awaitingSelection"`
+	Workspace            *projects.WorkspaceInfo    `json:"workspace,omitempty"`
+	Projects             *projects.ListOutput       `json:"projects,omitempty"`
 }
 
 type SetupInput struct {
@@ -1028,66 +1218,77 @@ func (r *Runtime) setupStatus(ctx context.Context, req *mcp.CallToolRequest, in 
 	connectorInfo := connectorSchemaInfo(r.schemaVer, reloadedVersion, conversationVersion)
 	update := selfupdate.Inspect(ctx, buildinfo.Version, in.ForceUpdateCheck)
 	return nil, SetupStatusOutput{
-		Version:             buildinfo.Version,
-		ConnectorVersion:    r.schemaVer,
-		ConversationVersion: conversationVersion,
-		ConversationStale:   conversationVersion != "" && conversationVersion != r.schemaVer,
-		ConnectorSchema:     connectorInfo,
-		Update:              update,
-		UpdateCheckMS:       time.Since(started).Milliseconds(),
-		MultiProject:        status.MultiProject,
-		AccessRoot:          status.AccessRoot,
-		WorktreeMode:        status.WorktreeMode,
-		Selected:            status.Selected,
-		AwaitingSelection:   status.AwaitingSelection,
-		Workspace:           status.Workspace,
+		Version:              buildinfo.Version,
+		ConnectorVersion:     r.schemaVer,
+		ConversationVersion:  conversationVersion,
+		ConversationStale:    conversationVersion != "" && conversationVersion != r.schemaVer,
+		ConnectorSchema:      connectorInfo,
+		Update:               update,
+		UpdateCheckMS:        time.Since(started).Milliseconds(),
+		MultiProject:         status.MultiProject,
+		ProjectGroupsEnabled: status.ProjectGroupsEnabled,
+		Groups:               r.projects.ListProjectGroups(),
+		AccessRoot:           status.AccessRoot,
+		WorktreeMode:         status.WorktreeMode,
+		Selected:             status.Selected,
+		AwaitingSelection:    status.AwaitingSelection,
+		Workspace:            status.Workspace,
 	}, nil
 }
 
 type TextOutput struct {
-	Content string `json:"content"`
+	Repository *agenttools.RepositoryContext `json:"repository,omitempty"`
+	Content    string                        `json:"content"`
 }
 
 type MemoryNoteInput struct {
-	Key   string `json:"key" jsonschema:"short stable note key"`
-	Value string `json:"value" jsonschema:"note text, normally one or two sentences"`
+	Repository string `json:"repository,omitempty" jsonschema:"optional project-group repository alias"`
+	Key        string `json:"key" jsonschema:"short stable note key"`
+	Value      string `json:"value" jsonschema:"note text, normally one or two sentences"`
 }
 
 type ForgetMemoryInput struct {
-	Key string `json:"key" jsonschema:"existing memory note key"`
+	Repository string `json:"repository,omitempty" jsonschema:"optional project-group repository alias"`
+	Key        string `json:"key" jsonschema:"existing memory note key"`
 }
 
 type ExportHostFileInput struct {
-	Path string `json:"path" jsonschema:"existing file path relative to the active workspace"`
+	Repository string `json:"repository,omitempty" jsonschema:"optional project-group repository alias"`
+	Path       string `json:"path" jsonschema:"existing file path relative to the active workspace"`
 }
 
 type ImportHostFileInput struct {
-	File ingress.FileParam `json:"file" jsonschema:"host-authorized OpenAI native-file reference"`
-	Path string            `json:"path" jsonschema:"new destination file path relative to the active workspace"`
+	Repository string            `json:"repository,omitempty" jsonschema:"optional project-group repository alias"`
+	File       ingress.FileParam `json:"file" jsonschema:"host-authorized OpenAI native-file reference"`
+	Path       string            `json:"path" jsonschema:"new destination file path relative to the active workspace"`
 }
 
 type ApplyPatchInput struct {
-	Input string `json:"input" jsonschema:"complete patch text including *** Begin Patch and *** End Patch markers"`
+	Repository string `json:"repository,omitempty" jsonschema:"optional project-group repository alias"`
+	Input      string `json:"input" jsonschema:"complete patch text including *** Begin Patch and *** End Patch markers"`
 }
 
 type ShowDiffInput struct {
+	Repository   string `json:"repository,omitempty" jsonschema:"optional project-group repository alias"`
 	Since        string `json:"since,omitempty" jsonschema:"checkpoint to compare against: last_diff or project_open; default last_diff"`
 	Advance      *bool  `json:"advance,omitempty" jsonschema:"advance the private last-diff checkpoint after emitting this snapshot; default true"`
 	IncludePatch *bool  `json:"include_patch,omitempty" jsonschema:"include a bounded unified binary-capable patch in component metadata; default true"`
 }
 
 type ShowDiffOutput struct {
-	Content            string          `json:"content"`
-	Since              string          `json:"since"`
-	CheckpointAdvanced bool            `json:"checkpointAdvanced"`
-	Scope              string          `json:"scope"`
-	Summary            diffmgr.Summary `json:"summary"`
-	Files              []diffmgr.File  `json:"files"`
-	FilesOmitted       int             `json:"filesOmitted"`
-	Warnings           []string        `json:"warnings"`
+	Repository         *agenttools.RepositoryContext `json:"repository,omitempty"`
+	Content            string                        `json:"content"`
+	Since              string                        `json:"since"`
+	CheckpointAdvanced bool                          `json:"checkpointAdvanced"`
+	Scope              string                        `json:"scope"`
+	Summary            diffmgr.Summary               `json:"summary"`
+	Files              []diffmgr.File                `json:"files"`
+	FilesOmitted       int                           `json:"filesOmitted"`
+	Warnings           []string                      `json:"warnings"`
 }
 
 type ExecCommandInput struct {
+	Repository  string `json:"repository,omitempty" jsonschema:"optional project-group repository alias; the started session remains owned by this member"`
 	Command     string `json:"cmd" jsonschema:"shell command to execute"`
 	Shell       string `json:"shell,omitempty" jsonschema:"powershell, pwsh, cmd, sh, bash, or zsh depending on platform"`
 	Workdir     string `json:"workdir,omitempty" jsonschema:"workspace-relative working directory"`
@@ -1095,17 +1296,18 @@ type ExecCommandInput struct {
 }
 
 type ExecCommandOutput struct {
-	Output    string `json:"output"`
-	SessionID string `json:"session_id,omitempty"`
-	Running   bool   `json:"running"`
-	ExitCode  *int   `json:"exit_code,omitempty"`
+	Repository *agenttools.RepositoryContext `json:"repository,omitempty"`
+	Output     string                        `json:"output"`
+	SessionID  string                        `json:"session_id,omitempty"`
+	Running    bool                          `json:"running"`
+	ExitCode   *int                          `json:"exit_code,omitempty"`
 }
 
 func (r *Runtime) execCommand(_ context.Context, req *mcp.CallToolRequest, in ExecCommandInput) (*mcp.CallToolResult, ExecCommandOutput, error) {
-	if err := r.prepareMutation(req); err != nil {
+	if err := r.prepareMutation(req, in.Repository); err != nil {
 		return nil, ExecCommandOutput{}, err
 	}
-	root, _, err := r.workspaceFor(req)
+	root, selection, err := r.workspaceForRepository(req, in.Repository)
 	if err != nil {
 		return nil, ExecCommandOutput{}, err
 	}
@@ -1120,20 +1322,38 @@ func (r *Runtime) execCommand(_ context.Context, req *mcp.CallToolRequest, in Ex
 	if !info.IsDir() {
 		return nil, ExecCommandOutput{}, errors.New("workdir is not a directory")
 	}
+	identity := projects.IdentityFromMeta(r.requestMeta(req))
+	conversation := r.diffKey
+	if identity != nil {
+		conversation = identity.Key
+	} else if r.cfg.MCP.MultiProject {
+		return nil, ExecCommandOutput{}, errors.New("exec_command requires a conversation identity in multi-project mode")
+	}
+	owner := execsession.Owner{
+		Conversation:     conversation,
+		Group:            selection.GroupName,
+		Repository:       selection.EffectiveRepository,
+		Root:             root.Path(),
+		Fingerprint:      selection.MembershipFingerprint,
+		BindingEpoch:     selection.BindingEpoch,
+		CheckoutRevision: selection.EffectiveCheckoutRevision,
+	}
 	res, err := r.exec.Start(execsession.StartInput{
 		Command: in.Command,
 		Shell:   in.Shell,
 		Workdir: workdir,
 		Yield:   time.Duration(in.YieldTimeMS) * time.Millisecond,
+		Owner:   owner,
 	})
 	if err != nil {
 		return nil, ExecCommandOutput{}, err
 	}
 	return nil, ExecCommandOutput{
-		Output:    res.Output,
-		SessionID: res.SessionID,
-		Running:   res.Running,
-		ExitCode:  res.ExitCode,
+		Repository: repositoryContext(selection),
+		Output:     res.Output,
+		SessionID:  res.SessionID,
+		Running:    res.Running,
+		ExitCode:   res.ExitCode,
 	}, nil
 }
 
@@ -1143,21 +1363,93 @@ type WriteStdinInput struct {
 	YieldTimeMS int    `json:"yield_time_ms,omitempty" jsonschema:"wait before returning; maximum 30000 milliseconds"`
 }
 
-func (r *Runtime) writeStdin(_ context.Context, _ *mcp.CallToolRequest, in WriteStdinInput) (*mcp.CallToolResult, ExecCommandOutput, error) {
-	res, err := r.exec.Write(in.SessionID, in.Chars, time.Duration(in.YieldTimeMS)*time.Millisecond)
+func (r *Runtime) writeStdin(_ context.Context, req *mcp.CallToolRequest, in WriteStdinInput) (*mcp.CallToolResult, ExecCommandOutput, error) {
+	meta := r.requestMeta(req)
+	identity := projects.IdentityFromMeta(meta)
+	conversation := r.diffKey
+	if identity != nil {
+		conversation = identity.Key
+	} else if r.cfg.MCP.MultiProject {
+		return nil, ExecCommandOutput{}, errors.New("write_stdin requires a conversation identity in multi-project mode")
+	}
+	owner, err := r.exec.OwnerFor(in.SessionID, conversation)
+	if err != nil {
+		return nil, ExecCommandOutput{}, err
+	}
+	root, selected, err := r.projects.WorkspaceFor(meta, owner.Repository)
+	if err != nil {
+		return nil, ExecCommandOutput{}, err
+	}
+	if root.Path() != owner.Root ||
+		selected.GroupName != owner.Group ||
+		selected.EffectiveRepository != owner.Repository ||
+		selected.MembershipFingerprint != owner.Fingerprint ||
+		selected.BindingEpoch != owner.BindingEpoch ||
+		selected.EffectiveCheckoutRevision != owner.CheckoutRevision {
+		return nil, ExecCommandOutput{}, errors.New("exec session checkout binding changed; stdin access denied")
+	}
+	res, err := r.exec.WriteOwned(in.SessionID, owner, in.Chars, time.Duration(in.YieldTimeMS)*time.Millisecond)
 	if err != nil {
 		return nil, ExecCommandOutput{}, err
 	}
 	return nil, ExecCommandOutput{
-		Output:    res.Output,
-		SessionID: res.SessionID,
-		Running:   res.Running,
-		ExitCode:  res.ExitCode,
+		Repository: repositoryContext(selected),
+		Output:     res.Output,
+		SessionID:  res.SessionID,
+		Running:    res.Running,
+		ExitCode:   res.ExitCode,
 	}, nil
 }
 
 func (r *Runtime) workspaceFor(req *mcp.CallToolRequest) (*workspace.Root, projects.WorkspaceInfo, error) {
-	return r.projects.Workspace(r.requestMeta(req))
+	return r.workspaceForRepository(req, "")
+}
+
+func (r *Runtime) chatWorkspaceFor(req *mcp.CallToolRequest) (*workspace.Root, projects.WorkspaceInfo, error) {
+	status, err := r.projects.Status(r.requestMeta(req))
+	if err != nil {
+		return nil, projects.WorkspaceInfo{}, err
+	}
+	if status.Workspace != nil && status.Workspace.Mode == "group" {
+		// The group conversation's CHAT.md belongs to its primary *source*
+		// checkout. It must not migrate when the primary member switches
+		// between source and managed worktrees in this same conversation.
+		primary, err := r.projects.ResolveProjectGroupSource(
+			status.Workspace.GroupName, status.Workspace.PrimaryRepository)
+		if err != nil {
+			return nil, projects.WorkspaceInfo{}, err
+		}
+		return primary.Root, *status.Workspace, nil
+	}
+	return r.workspaceFor(req)
+}
+
+func (r *Runtime) workspaceForRepository(req *mcp.CallToolRequest, repository string) (*workspace.Root, projects.WorkspaceInfo, error) {
+	return r.projects.WorkspaceFor(r.requestMeta(req), repository)
+}
+
+func repositoryContext(selection projects.WorkspaceInfo) *agenttools.RepositoryContext {
+	if selection.Mode != "group" {
+		return nil
+	}
+	checkout := "source"
+	if selection.ManagedWorktree {
+		checkout = "managed"
+	}
+	return &agenttools.RepositoryContext{
+		Alias:             selection.EffectiveRepository,
+		SourceProjectRoot: selection.SourceProjectRoot,
+		ProjectRoot:       selection.ProjectRoot,
+		Checkout:          checkout,
+	}
+}
+
+func repositoryToolMeta(selection projects.WorkspaceInfo) mcp.Meta {
+	context := repositoryContext(selection)
+	if context == nil {
+		return nil
+	}
+	return mcp.Meta{"io.github.devnoname120/codexify/repository": context}
 }
 
 func (r *Runtime) diffOwner(req *mcp.CallToolRequest) diffmgr.Owner {
@@ -1179,8 +1471,8 @@ func (r *Runtime) ensureDiffSelection(req *mcp.CallToolRequest, selection projec
 	return err
 }
 
-func (r *Runtime) prepareMutation(req *mcp.CallToolRequest) error {
-	root, selection, err := r.workspaceFor(req)
+func (r *Runtime) prepareMutation(req *mcp.CallToolRequest, repository string) error {
+	root, selection, err := r.workspaceForRepository(req, repository)
 	if err != nil {
 		return err
 	}
@@ -1194,20 +1486,20 @@ func (r *Runtime) prepareMutation(req *mcp.CallToolRequest) error {
 	return err
 }
 
-func (r *Runtime) filesFor(req *mcp.CallToolRequest) (*agenttools.Files, error) {
-	root, _, err := r.workspaceFor(req)
+func (r *Runtime) filesFor(req *mcp.CallToolRequest, repository string) (*agenttools.Files, *agenttools.RepositoryContext, error) {
+	root, selection, err := r.workspaceForRepository(req, repository)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return &agenttools.Files{Root: root}, nil
+	return &agenttools.Files{Root: root}, repositoryContext(selection), nil
 }
 
-func (r *Runtime) gitFor(req *mcp.CallToolRequest) (*agenttools.Git, error) {
-	root, _, err := r.workspaceFor(req)
+func (r *Runtime) gitFor(req *mcp.CallToolRequest, repository string) (*agenttools.Git, *agenttools.RepositoryContext, error) {
+	root, selection, err := r.workspaceForRepository(req, repository)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return &agenttools.Git{Root: root}, nil
+	return &agenttools.Git{Root: root}, repositoryContext(selection), nil
 }
 
 func (r *Runtime) requestMeta(req *mcp.CallToolRequest) map[string]any {
@@ -1250,8 +1542,8 @@ func (r *Runtime) watchTransportSession(session *mcp.ServerSession, sessionID st
 	}()
 }
 
-func (r *Runtime) agentBrief(req *mcp.CallToolRequest) (string, error) {
-	root, selection, err := r.workspaceFor(req)
+func (r *Runtime) agentBrief(req *mcp.CallToolRequest, repository string) (string, error) {
+	root, selection, err := r.workspaceForRepository(req, repository)
 	if err != nil {
 		return "", err
 	}
@@ -1273,6 +1565,11 @@ func (r *Runtime) agentBrief(req *mcp.CallToolRequest) (string, error) {
 
 	sections = append(sections, fmt.Sprintf("## Environment\n\n- Platform: %s/%s\n- User: %s\n- Active workspace: %s\n- Access root: %s\n- Workspace mode: %s\n- Managed worktree: %t\n- Binding scope: %s",
 		runtime.GOOS, runtime.GOARCH, username, root.Path(), selection.AccessRoot, selection.Mode, selection.ManagedWorktree, selection.BindingScope))
+	if selection.Mode == "group" {
+		sections = append(sections, fmt.Sprintf("## Project group\n\n- Group: %s\n- Primary: %s\n- Active default: %s\n- Effective repository for this brief: %s\n- Source checkout: %s\n- Effective checkout: %s\n\nExplicit repository arguments route only that call and never change the active default. AGENTS.md and repository-specific state below belong to the effective repository; group chat lives with the primary checkout. Arbitrary shell commands run with the current OS user's permissions, not in a filesystem sandbox.",
+			selection.GroupName, selection.PrimaryRepository, selection.ActiveRepository,
+			selection.EffectiveRepository, selection.SourceProjectRoot, selection.ProjectRoot))
+	}
 
 	if r.memory.Enabled() {
 		remembered, err := r.memory.Recall(root.Path())
@@ -1285,7 +1582,13 @@ func (r *Runtime) agentBrief(req *mcp.CallToolRequest) (string, error) {
 	}
 
 	if r.cfg.Skills.Enabled {
-		catalog, err := r.skills.List(root.Path())
+		var catalog skills.Catalog
+		var err error
+		if selection.Mode == "group" {
+			catalog, err = r.skills.ListWithin(root)
+		} else {
+			catalog, err = r.skills.List(root.Path())
+		}
 		if err != nil {
 			return "", err
 		}
@@ -1296,14 +1599,23 @@ func (r *Runtime) agentBrief(req *mcp.CallToolRequest) (string, error) {
 
 	if r.chat.Enabled() {
 		identity := projects.IdentityFromMeta(r.requestMeta(req))
-		path, chatErr := r.chat.Ensure(root.Path(), identity)
+		chatRoot, _, chatRootErr := r.chatWorkspaceFor(req)
+		if chatRootErr != nil {
+			return "", chatRootErr
+		}
+		path, chatErr := r.chat.Ensure(chatRoot.Path(), identity)
 		if chatErr != nil {
 			return "", chatErr
 		}
 		sections = append(sections, "## This conversation's Markdown chat\n\nCHAT.md: `"+path+"`\n\nRead new user text with chat_read, send user-facing Markdown with chat_write, and use chat_await as the idle state. Direct read_file/grep is for history only; do not write CHAT.md with ordinary file tools.")
 	}
 
-	doc := projectdoc.Load(root.Path(), r.cfg.ProjectDoc)
+	var doc projectdoc.Document
+	if selection.Mode == "group" {
+		doc = projectdoc.LoadWithin(root, r.cfg.ProjectDoc)
+	} else {
+		doc = projectdoc.Load(root.Path(), r.cfg.ProjectDoc)
+	}
 	if strings.TrimSpace(doc.Content) != "" {
 		sections = append(sections, "The project's own instructions follow the marker below. They take precedence over the generic workflow guidance above.\n\n"+projectdoc.Separator+"\n\n"+doc.Content)
 	}
@@ -1315,6 +1627,8 @@ func builtInToolNames() map[string]struct{} {
 		"get_agent_brief", "get_project_doc",
 		"chat_read", "chat_write", "chat_await", "self_update_status",
 		"setup", "list_projects", "set_project_root", "setup_ui_switch_project", "setup_status", "list_worktrees", "get_environment",
+		"list_project_groups", "set_project_group", "set_active_repository", "get_project_group_status",
+		"set_repository_checkout",
 		"recall", "remember", "update_memory_note", "forget_memory_note", "skills_list", "skills_read",
 		"export_host_file", "import_host_file",
 		"read_file", "write_file", "apply_patch", "glob", "grep", "exec_command", "write_stdin",

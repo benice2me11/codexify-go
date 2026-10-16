@@ -28,6 +28,9 @@ type WorktreeRow struct {
 }
 
 type WorktreeListOutput struct {
+	Repository        string        `json:"repository,omitempty"`
+	Checkout          string        `json:"checkout,omitempty"`
+	ActiveProjectRoot string        `json:"activeProjectRoot,omitempty"`
 	SourceProjectRoot string        `json:"sourceProjectRoot"`
 	Worktrees         []WorktreeRow `json:"worktrees"`
 }
@@ -79,7 +82,21 @@ func (m *Manager) createManagedWorktreeAt(identity *Identity, selected, gitRoot,
 		_ = removeManagedWorktree(gitRoot, worktreeGitRoot)
 		return ManagedWorktree{}, fmt.Errorf("project path missing in managed worktree: %w", err)
 	}
-	return ManagedWorktree{ProjectRoot: projectRoot, GitRoot: worktreeGitRoot, Branch: branch}, nil
+	// Persist the same physical path that workspace.New returns on the
+	// next request. On macOS temp paths may be under /var, but the
+	// resolved path is /private/var; on Windows 8.3/extended path aliases
+	// can likewise differ without any checkout replacement.
+	canonicalGitRoot, err := workspace.Canonical(worktreeGitRoot)
+	if err != nil {
+		_ = removeManagedWorktree(gitRoot, worktreeGitRoot)
+		return ManagedWorktree{}, fmt.Errorf("canonicalize managed Git root: %w", err)
+	}
+	canonicalProjectRoot, err := workspace.Canonical(projectRoot)
+	if err != nil {
+		_ = removeManagedWorktree(gitRoot, worktreeGitRoot)
+		return ManagedWorktree{}, fmt.Errorf("canonicalize managed project root: %w", err)
+	}
+	return ManagedWorktree{ProjectRoot: canonicalProjectRoot, GitRoot: canonicalGitRoot, Branch: branch}, nil
 }
 
 func removeManagedWorktree(sourceGitRoot, worktreeGitRoot string) error {
@@ -91,7 +108,11 @@ func removeManagedWorktree(sourceGitRoot, worktreeGitRoot string) error {
 }
 
 func (m *Manager) ListWorktrees(meta map[string]any) (WorktreeListOutput, error) {
-	root, info, err := m.Workspace(meta)
+	return m.ListWorktreesFor(meta, "")
+}
+
+func (m *Manager) ListWorktreesFor(meta map[string]any, repository string) (WorktreeListOutput, error) {
+	root, info, err := m.WorkspaceFor(meta, repository)
 	if err != nil {
 		return WorktreeListOutput{}, err
 	}
@@ -141,7 +162,16 @@ func (m *Manager) ListWorktrees(meta map[string]any) (WorktreeListOutput, error)
 		}
 	}
 	flush()
-	return WorktreeListOutput{SourceProjectRoot: info.SourceProjectRoot, Worktrees: rows}, nil
+	result := WorktreeListOutput{SourceProjectRoot: info.SourceProjectRoot, Worktrees: rows}
+	if info.Mode == "group" {
+		result.Repository = info.EffectiveRepository
+		result.ActiveProjectRoot = info.ProjectRoot
+		result.Checkout = "source"
+		if info.ManagedWorktree {
+			result.Checkout = "managed"
+		}
+	}
+	return result, nil
 }
 
 func randomSuffix() string {

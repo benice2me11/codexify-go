@@ -32,6 +32,25 @@ func TestVersionReflectsSchemaFeatures(t *testing.T) {
 	}
 }
 
+func TestProjectGroupsSchemaVersionIsDistinctAndOptIn(t *testing.T) {
+	cfg := config.Default()
+	cfg.MCP.MultiProject = true
+	cfg.ArtifactIngress.Enabled = false
+	legacy := Version(cfg)
+	if strings.Contains(legacy, "project-groups") {
+		t.Fatalf("legacy version unexpectedly advertised groups: %q", legacy)
+	}
+	cfg.MCP.ProjectGroupsEnabled = true
+	groupVersion := Version(cfg)
+	if groupVersion == legacy || !strings.Contains(groupVersion, "+project-groups-v1") {
+		t.Fatalf("group schema needs a distinct marker: legacy=%q group=%q", legacy, groupVersion)
+	}
+	cfg.ArtifactIngress.Enabled = true
+	if got := Version(cfg); got == legacy || len(got) > 64 {
+		t.Fatalf("group feature marker must survive version shortening: %q", got)
+	}
+}
+
 func TestStorePersistsConnectorAndFirstConversationVersion(t *testing.T) {
 	dir := t.TempDir()
 	store := &Store{dir: dir}

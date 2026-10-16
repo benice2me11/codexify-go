@@ -4,6 +4,8 @@
 
 **Source revision:** `main` at `cd6b5bd59dea0be35e3107446dfddce322f41ad2`. The staged candidate was compiled from this revision and previously passed Windows/Linux/macOS native CI plus compiled-worker and previous-Go fixture smoke.
 
+**Operator scripts:** merged through PR #30 at `b7a39f08717dee6b3cfee1316694e3b553f827f4`; the frozen operator source is `00647a6e976105d2ea641d0eadb79cad5db80c5e`, which passed all 11 checks in [CI 38858554632](https://github.com/benice2me11/codexify-go/actions/runs/38858554632). Only the PowerShell/docs/CI files changed after the Go binary was built.
+
 ## Why a new transaction was required
 
 The old `Prepare-GoToGoUpgrade.ps1` / `Invoke-GoToGoUpgrade.ps1` assumes the *previous* rollback-armed `Watch-Cutover.ps1 -ArmRollback` process. Production now has a **Go-only** `Watch-GoTrial.ps1 -ArmGoRecovery`, one matching watcher process and an Automatic `CodexifyGo` SCM service. The old read-only preparer correctly fails with `Expected exactly one old rollback-armed watcher, got 0`. Executing the old transaction against this topology is unsafe.
@@ -20,7 +22,7 @@ Private protected stage:
 - Previous verified live Go SHA256: `8BAA786E6BEFDCE5C746419B5A9277D3531A824938396DF8DDDA3FB7200B5880`.
 - Feature-disabled staged config SHA256: `9453FF3D13DCD97287112D13AB5A3E8ABDC64AAAC72C910AD238AA339D6D72F1`.
 - Group `job-search`: explicit `work`, `hh`, `habr` source checkouts; `projectGroupsEnabled=false`. The existing upstream MCP configuration, credentials, auth, tunnel ID, access root and bindings are unchanged.
-- Final operator transaction `operator-trial-v5` is to be frozen **after CI confirms the exact final scripts**, with previous Go executable/profile, original G10 task XML, nine operator scripts and a hashed manifest. ACLs inherit only from the protected stage; private JSON config and Task XML are **never pushed to Git**.
+- Final operator transaction `operator-trial-v5` **was frozen after green CI**, with previous Go executable/profile, original G10 task XML, nine operator scripts and a hashed manifest. All nine frozen file checksums passed, as did the previous Go/config backup checks. All nine normalize to the corresponding source blobs already in `main`; three working-tree `.ps1` files have harmless LF/CRLF byte differences across Git checkout, so their frozen checksum (not the working-tree checksum) remains the authority at execution. ACLs inherit only from the protected stage; private JSON config and Task XML are **never pushed to Git**.
 - Obsolete `operator-trial-v2`, `operator-trial-v3` and `operator-trial-v4` generated during validation were retired; each executor was renamed to `.SUPERSEDED_DO_NOT_EXECUTE` so its expected operator hash check fails. Their snapshots remain only as forensic evidence.
 
 ## New operator workflow
@@ -61,9 +63,10 @@ or as a workaround for a 403/429/503 network interruption.
 
 - The new PowerShell AST parsed without errors, and `Test-GoOnlyTrialTransaction.ps1` passed its pure Go-only safety/recovery scenarios (healthy state, missing watcher, extra Go, Rust present, changed SHA, unsafe profile, G10 HOLD, disabled flag, tunnel ownership, foreign SCM owner fail-closed).
 - Live `Prepare-GoOnlyTrialUpgrade.ps1` PLAN_ONLY returned `HOLD` only for `g10_observation_not_accepted`; correctly saw one Go-only watcher and zero Rust processes.
-- Preliminary `-Prepare` runs produced private snapshots with verified previous Go/config and G10 XML hashes. The snapshots were retired after further safety fixes; final `operator-trial-v5` preparation is gated on CI. None was armed.
+- Preliminary `-Prepare` runs produced private snapshots v2–v4 and were retired after safety fixes. The final `operator-trial-v5` was created from the exact 11/11-CI-tested scripts after CI completion; 9/9 operator hashes, previous-Go/config snapshots and the stored G10 XML passed. This final transaction remains **not armed**.
 - Frozen `Invoke-GoOnlyTrialUpgrade.ps1` PLAN_ONLY returned `HOLD`, no service changes. Frozen task-builder PLAN_ONLY said `taskCanBeInstalled=false`, `executionArmed=false`, zero automatic triggers.
 - Production: `CodexifyGo` Running, 2 Go, 1 managed tunnel, 0 Rust, Rust Scheduled Tasks disabled. Live production binary/config hashes unchanged.
+- After PR #30 merged, the `main` Windows CI exposed an **independent pre-existing flaky test**: `TestSupervisorRestartsRealExitedProcess` expected three real Windows `cmd.exe` process launches within a fixed 150 ms and sometimes counted only two. The follow-up changes this *test only* to await three successful launches with a bounded 5-second deadline and cancel/await the supervisor on success. No production supervisor implementation changed. Windows test passed 30 repeated runs and the full Go suite/vet passed locally; native PR CI remains the authoritative gate.
 - **No `-Execute`, no `-Register`, no `Start-ScheduledTask`, no SCM update or service restart was performed.** Offline policy and syntax testing do not prove an elevated production transaction. A real approval and canary remain required.
 
 ## When the G10 guard may be reevaluated

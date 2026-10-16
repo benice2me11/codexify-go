@@ -36,6 +36,10 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./tools/windows/cutover-v2/Test-GoOnlyUpgrade.ps1
+      - name: Independent Go-only trial transaction policy and syntax
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tools/windows/cutover-v2/Test-GoOnlyTrialTransaction.ps1
       - name: Project Groups G10 readiness guard offline fixtures
         if: runner.os == 'Windows'
         shell: pwsh

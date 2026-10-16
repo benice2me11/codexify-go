@@ -50,6 +50,10 @@ Assert ($permitted.decision -eq 'READY_FOR_INDEPENDENT_OPERATOR_WITH_ACCEPTED_RI
 $waived.RustCount=1
 $blockedRisk=Get-GoOnlyTrialPreflightDecision -Facts $waived
 Assert ($blockedRisk.decision -eq 'HOLD' -and !$blockedRisk.mayMutateSCM) 'accepted risk waived a Rust-owner safety gate'
+$waived.RustCount=0
+$waived.G10Decision='BLOCKED'
+$blockedRisk=Get-GoOnlyTrialPreflightDecision -Facts $waived
+Assert ($blockedRisk.decision -eq 'HOLD' -and !$blockedRisk.mayMutateSCM) 'accepted risk waived a new G10 BLOCKED decision'
 
 $oldHash='8'*64
 $newHash='F'*64

@@ -38,7 +38,7 @@ function Get-GoOnlyTrialPreflightDecision {
         $specificApproval = [bool]$Facts.CandidateSpecificApprovalValid
     }
     if (!$strictG10Ready) {
-        if (!$acceptedRisk) {
+        if ([string]$Facts.G10Decision -ne 'HOLD' -or !$acceptedRisk) {
             $reasons.Add('g10_observation_not_accepted')
         } elseif (!$specificApproval) {
             $reasons.Add('candidate_specific_approval_required')

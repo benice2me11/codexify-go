@@ -52,7 +52,9 @@ Implemented `tools/windows/cutover-v2/Assess-ProjectGroupsCanaryReadiness.ps1` a
 **read-only** preflight over the existing G10 JSONL evidence and local
 `Inspect-G10Runtime.ps1`. It requires a complete observation window, fresh
 last guard, no unexpected gaps, no non-CONTINUE decisions, current Go-only
-topology, and disabled Rust tasks. It never reports production rollout PASS:
+topology (exactly two Go processes from the same service binary, one owned
+tunnel, zero Rust processes, controlled G10 observer), and disabled Rust tasks.
+It never reports production rollout PASS:
 the best possible local result is `LOCAL_READY_FOR_OPERATOR_REVIEW` after
 the other conditions are satisfied.
 

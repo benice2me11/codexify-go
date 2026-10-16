@@ -117,6 +117,21 @@ if (!$Offline) {
     if ($inspectionErrors.Count -gt 0) { $reasons.Add('inspector_warning') }
     if ($inspection.service.state -ine 'Running') { $reasons.Add('service_not_running') }
     if ($inspection.guard.fresh -ne $true -or $latestAction -ne 'CONTINUE') { $reasons.Add('latest_guard_not_continue') }
+    # LOCAL_OBSERVED deliberately uses lower bounds for incident inspection.
+    # Pre-cutover readiness is stricter: any duplicate/foreign Go process,
+    # extra owned tunnel, or uncontrolled observer blocks the canary.
+    if ($goCount -ne 2 -or $inspection.processes.goFromServiceBinary -ne 2 -or
+        $tunnelCount -ne 1 -or $rustCount -ne 0) {
+        $reasons.Add('unexpected_go_only_owner_topology')
+    }
+    if ($inspection.guard.owners.controlled -ne $true -or
+        $inspection.guard.owners.go -ne 2 -or
+        $inspection.guard.owners.rust -ne 0) {
+        $reasons.Add('guard_does_not_control_expected_go_owner')
+    }
+    if ($inspection.scheduledTasks.'CodexifyGo-G10Observers' -ne 'Running') {
+        $reasons.Add('g10_observer_not_running')
+    }
     if ($inspection.scheduledTasks.Codexify -ne 'Disabled' -or
         $inspection.scheduledTasks.'Codexify Watchdog' -ne 'Disabled') {
         $reasons.Add('rust_task_not_disabled')

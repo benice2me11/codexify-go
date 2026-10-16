@@ -28,17 +28,128 @@ function Get-GoOnlyTrialPreflightDecision {
     if (!$Facts.FeatureFlagDisabled -or !$Facts.ConfigScopePreserved) {
         $reasons.Add('unsafe_project_groups_staged_configuration')
     }
-    if ([string]$Facts.G10Decision -ne 'LOCAL_READY_FOR_OPERATOR_REVIEW') {
-        $reasons.Add('g10_observation_not_accepted')
+    $strictG10Ready = ([string]$Facts.G10Decision -eq 'LOCAL_READY_FOR_OPERATOR_REVIEW')
+    $acceptedRisk = $false
+    $specificApproval = $false
+    if ($null -ne $Facts.PSObject.Properties['G10OperatorEvidenceValid']) {
+        $acceptedRisk = [bool]$Facts.G10OperatorEvidenceValid
+    }
+    if ($null -ne $Facts.PSObject.Properties['CandidateSpecificApprovalValid']) {
+        $specificApproval = [bool]$Facts.CandidateSpecificApprovalValid
+    }
+    if (!$strictG10Ready) {
+        if (!$acceptedRisk) {
+            $reasons.Add('g10_observation_not_accepted')
+        } elseif (!$specificApproval) {
+            $reasons.Add('candidate_specific_approval_required')
+        }
     }
     $decision = 'READY_FOR_INDEPENDENT_OPERATOR'
+    if (!$strictG10Ready) { $decision = 'READY_FOR_INDEPENDENT_OPERATOR_WITH_ACCEPTED_RISK' }
     if ($reasons.Count -ne 0) { $decision = 'HOLD' }
     return [pscustomobject]@{
         decision = $decision
         reasons = @($reasons.ToArray())
+        technicalG10Decision = [string]$Facts.G10Decision
+        usedAcceptedRiskException = (!$strictG10Ready -and $decision -eq 'READY_FOR_INDEPENDENT_OPERATOR_WITH_ACCEPTED_RISK')
         oldGoOnly = $true
         rustFallback = $false
-        mayMutateSCM = ($decision -eq 'READY_FOR_INDEPENDENT_OPERATOR')
+        mayMutateSCM = ($decision -in @('READY_FOR_INDEPENDENT_OPERATOR','READY_FOR_INDEPENDENT_OPERATOR_WITH_ACCEPTED_RISK'))
+    }
+}
+
+function Get-GoOnlyTrialAcceptedRiskEvidence {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$Acceptance,
+        [Parameter(Mandatory)]$G10,
+        [Parameter(Mandatory)][string]$PreviousGoSHA256
+    )
+    $reasons = [System.Collections.Generic.List[string]]::new()
+    if ([string]$PreviousGoSHA256 -notmatch '^[A-Fa-f0-9]{64}$' -or
+        [string]$Acceptance.goSha256 -ne $PreviousGoSHA256 -or
+        [string]$Acceptance.decision -ne 'G10_OPERATOR_ACCEPTED_WITH_DEVIATIONS' -or
+        [string]$Acceptance.scope -ne 'already_running_windows_CodexifyGo_sha256_only' -or
+        [string]$Acceptance.originalStrictTechnicalDecision -ne 'HOLD' -or
+        [bool]$Acceptance.goToGoCandidateUpgradeApproved -or
+        [bool]$Acceptance.rustFallbackAllowed) {
+        $reasons.Add('accepted_record_is_not_the_current_go_only_deployment')
+    }
+    $allowed=@('g10_observation_gap','non_continue_guard_action','soak_window_short')
+    $acceptedReasons=@($Acceptance.originalStrictHoldReasons | ForEach-Object {[string]$_} | Sort-Object -Unique)
+    $currentReasons=@($G10.holdReasons | ForEach-Object {[string]$_} | Sort-Object -Unique)
+    if ($acceptedReasons.Count -ne $allowed.Count -or
+        @($acceptedReasons | Where-Object {$_ -notin $allowed}).Count -ne 0 -or
+        $currentReasons.Count -ne $allowed.Count -or
+        @($currentReasons | Where-Object {$_ -notin $allowed}).Count -ne 0) {
+        $reasons.Add('strict_g10_contains_new_or_unaccepted_failures')
+    }
+    if ([string]$G10.decision -ne 'HOLD' -or
+        [string]$G10.mode -ne 'live_read_only' -or
+        [string]$G10.localAssessment -ne 'LOCAL_OBSERVED' -or
+        [string]$G10.topology.latestGuard -ne 'CONTINUE' -or
+        [int]$G10.topology.goCount -ne 2 -or
+        [int]$G10.topology.tunnelDirectChildren -ne 1 -or
+        [int]$G10.topology.rustCount -ne 0 -or
+        [double]$G10.soak.lastSampleAgeSeconds -gt 45 -or
+        [double]$G10.soak.lastSampleAgeSeconds -lt 0 -or
+        [int]$G10.soak.nonContinueCount -gt 2 -or
+        @($G10.inspectionWarnings | Where-Object {$null -ne $_}).Count -ne 0) {
+        $reasons.Add('current_g10_go_only_safety_snapshot_unhealthy')
+    }
+    return [pscustomobject]@{
+        validForPreviousGoOnly = ($reasons.Count -eq 0)
+        candidateApproved = $false
+        technicalG10Decision = [string]$G10.decision
+        reasons = @($reasons.ToArray())
+    }
+}
+
+function Get-GoOnlyTrialCandidateApprovalEvidence {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$Approval,
+        [Parameter(Mandatory)][string]$PreviousGoSHA256,
+        [Parameter(Mandatory)][string]$CandidateSHA256,
+        [Parameter(Mandatory)][string]$CandidateConfigSHA256,
+        [Parameter(Mandatory)][string]$SourceCommit,
+        [Parameter(Mandatory)][string]$AcceptedRiskMarkerSHA256,
+        [Parameter(Mandatory)][DateTimeOffset]$Now
+    )
+    $reason = ''
+    if ([int]$Approval.schemaVersion -ne 1 -or
+        [string]$Approval.intent -ne 'GO_ONLY_PROJECT_GROUPS_CANARY_WITH_G10_OPERATOR_RISK_EXCEPTION' -or
+        ![bool]$Approval.explicitOperatorApproval -or
+        [bool]$Approval.allowRustFallback -or
+        $PreviousGoSHA256 -notmatch '^[A-Fa-f0-9]{64}$' -or
+        $CandidateSHA256 -notmatch '^[A-Fa-f0-9]{64}$' -or
+        $CandidateConfigSHA256 -notmatch '^[A-Fa-f0-9]{64}$' -or
+        $AcceptedRiskMarkerSHA256 -notmatch '^[A-Fa-f0-9]{64}$' -or
+        $SourceCommit -notmatch '^[a-f0-9]{40}$' -or
+        [string]$Approval.previousGoSHA256 -ne $PreviousGoSHA256 -or
+        [string]$Approval.candidateGoSHA256 -ne $CandidateSHA256 -or
+        [string]$Approval.candidateConfigSHA256 -ne $CandidateConfigSHA256 -or
+        [string]$Approval.acceptedRiskMarkerSHA256 -ne $AcceptedRiskMarkerSHA256 -or
+        [string]$Approval.candidateSourceCommit -ne $SourceCommit) {
+        $reason='candidate_specific_approval_identity_mismatch'
+    } else {
+        try {
+            $start=[DateTimeOffset]::Parse([string]$Approval.createdAtUtc)
+            $expiry=[DateTimeOffset]::Parse([string]$Approval.expiresAtUtc)
+            if ($start -gt $Now.AddMinutes(1) -or
+                $expiry -le $Now -or
+                ($expiry-$start).TotalMinutes -gt 60 -or
+                ($expiry-$start).TotalMinutes -le 0) {
+                $reason='candidate_specific_approval_expired_or_out_of_range'
+            }
+        } catch {
+            $reason='candidate_specific_approval_invalid_time'
+        }
+    }
+    return [pscustomobject]@{
+        valid=($reason -eq '')
+        reason=$reason
+        sourceCommit=$SourceCommit
     }
 }
 
@@ -145,4 +256,4 @@ function Assert-GoOnlyTrialProfile {
     return $true
 }
 
-Export-ModuleMember -Function Get-GoOnlyTrialPreflightDecision,Get-GoOnlyTrialRecoveryDecision,Assert-GoOnlyTrialProfile
+Export-ModuleMember -Function Get-GoOnlyTrialPreflightDecision,Get-GoOnlyTrialAcceptedRiskEvidence,Get-GoOnlyTrialCandidateApprovalEvidence,Get-GoOnlyTrialRecoveryDecision,Assert-GoOnlyTrialProfile

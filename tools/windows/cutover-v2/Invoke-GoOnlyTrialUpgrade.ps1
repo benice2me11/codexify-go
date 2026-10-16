@@ -6,6 +6,8 @@
 param(
     [Parameter(Mandatory)][string]$TransactionDirectory,
     [switch]$Execute,
+    [switch]$UseAcceptedG10,
+    [string]$ExpectedCandidateApprovalSHA256 = '',
     [string]$ExpectedSourceCommit = '',
     [string]$OperatorTaskName = ''
 )
@@ -28,6 +30,17 @@ $m=Get-Content -LiteralPath $file -Raw|ConvertFrom-Json -ErrorAction Stop
 if ([int]$m.version -ne 1 -or [string]$m.transactionKind -ne 'go_only_watch_go_trial_to_go_only' -or
     [bool]$m.autoRustFallback -or [string]$m.stageSourceCommit -notmatch '^[a-f0-9]{40}$') {
     throw 'Unexpected or unsafe Go-only transaction manifest'
+}
+if ([bool]$m.useAcceptedG10 -ne [bool]$UseAcceptedG10) {
+    throw 'Transaction G10 policy is fixed at preparation; operator cannot switch modes'
+}
+if($UseAcceptedG10) {
+    $stageRoot=Split-Path -Parent $root
+    $riskFile=Join-Path $stageRoot 'g10-operator-acceptance-20261016.json'
+    if(!(Test-Path -LiteralPath $riskFile -PathType Leaf) -or
+       (Get-FileHash -LiteralPath $riskFile -Algorithm SHA256).Hash -ne [string]$m.g10OperatorAcceptanceSHA256) {
+        throw 'Pinned previous-Go G10 operator acceptance changed after snapshot'
+    }
 }
 if ($ExpectedSourceCommit -ne '' -and $ExpectedSourceCommit -ne [string]$m.stageSourceCommit) {
     throw 'Explicit expected candidate commit differs from prepared manifest'
@@ -63,13 +76,17 @@ if($savedTaskXML -cne $currentTaskXML){
     throw 'Live G10 task definition changed since snapshot; prepare a fresh Go-only transaction'
 }
 $stage=Split-Path -Parent $root
-$planRaw=& (Join-Path $PSScriptRoot 'Prepare-GoOnlyTrialUpgrade.ps1') -StagingDirectory $stage -CurrentG10RunDirectory $m.oldRunDirectory -TransactionDirectory $root -ServiceName $m.serviceName -G10TaskName $m.g10TaskName
+$planRaw=& (Join-Path $PSScriptRoot 'Prepare-GoOnlyTrialUpgrade.ps1') -StagingDirectory $stage -CurrentG10RunDirectory $m.oldRunDirectory -TransactionDirectory $root -ServiceName $m.serviceName -G10TaskName $m.g10TaskName -UseAcceptedG10:$UseAcceptedG10
 $plan=$planRaw | ConvertFrom-Json -ErrorAction Stop
 $report=[ordered]@{
     checkedAtUtc=[DateTimeOffset]::UtcNow.ToString('o')
     mode=$(if($Execute){'EXECUTE_REQUESTED'}else{'PLAN_ONLY'})
     decision=$plan.decision
     blockingReasons=$plan.blockReasons
+    strictTechnicalG10=$plan.g10Decision
+    acceptedPriorGoRiskEvidence=$plan.acceptedOldGoRiskEvidenceValid
+    candidateSpecificApprovalValid=$plan.candidateSpecificApprovalValid
+    useAcceptedG10=[bool]$UseAcceptedG10
     previousGoHash=$m.oldSha
     candidateGoHash=$m.newSha
     sourceCommit=$m.stageSourceCommit
@@ -78,8 +95,25 @@ $report=[ordered]@{
     productionChanged=$false
 }
 if (!$Execute) { $report|ConvertTo-Json -Depth 7;return }
-if ($plan.decision -ne 'READY_FOR_INDEPENDENT_OPERATOR') {
-    throw 'Live G10/Go-only preflight is HOLD; execution forbidden'
+if ($plan.decision -notin @('READY_FOR_INDEPENDENT_OPERATOR','READY_FOR_INDEPENDENT_OPERATOR_WITH_ACCEPTED_RISK')) {
+    throw 'Live Go-only safety/preflight is HOLD; execution forbidden'
+}
+if($UseAcceptedG10 -and
+   ($plan.decision -ne 'READY_FOR_INDEPENDENT_OPERATOR_WITH_ACCEPTED_RISK' -or
+    !$plan.acceptedOldGoRiskEvidenceValid -or !$plan.candidateSpecificApprovalValid)) {
+    throw 'Explicit candidate-specific approval and healthy old-Go risk exception are required for this transaction'
+}
+if($UseAcceptedG10) {
+    $approvalFile=Join-Path $root 'candidate-approval.json'
+    if(!(Test-Path -LiteralPath $approvalFile -PathType Leaf)) {
+        throw 'Candidate-specific approval record disappeared'
+    }
+    $approvalSHA=(Get-FileHash -LiteralPath $approvalFile -Algorithm SHA256).Hash
+    if($Execute -and
+       ($ExpectedCandidateApprovalSHA256 -notmatch '^[A-Fa-f0-9]{64}$' -or
+        $ExpectedCandidateApprovalSHA256 -ne $approvalSHA)) {
+        throw 'Independent operator must pin the exact time-limited candidate approval record hash'
+    }
 }
 if ($ExpectedSourceCommit -ne [string]$m.stageSourceCommit) {
     throw 'Execute requires the exact prepared source commit'
@@ -97,6 +131,9 @@ if ($independent.State -ne 'Running' -or $independent.Principal.RunLevel -ne 'Hi
     @($independent.Triggers | Where-Object { $null -ne $_ }).Count -ne 0 -or $actions.Count -ne 1 -or
     [string]$actions[0].Arguments -notmatch 'Invoke-GoOnlyTrialUpgrade[.]ps1' -or
     [string]$actions[0].Arguments -notmatch '[-]Execute' -or
+    ([bool]([string]$actions[0].Arguments -match '[-]UseAcceptedG10') -ne [bool]$UseAcceptedG10) -or
+    ($UseAcceptedG10 -and
+      [string]$actions[0].Arguments -notmatch [regex]::Escape($ExpectedCandidateApprovalSHA256)) -or
     ([string]$actions[0].Arguments).IndexOf($root,[StringComparison]::OrdinalIgnoreCase) -lt 0) {
     throw 'Independent Highest on-demand operator task not verified'
 }
@@ -177,7 +214,7 @@ function Restore-OriginalWatcher {
     }
 }
 try {
-    Write-GoUpgradeEvent -Path $events -Phase 'go_only_trial_independent_task_started' -Result 'PASS'
+    Write-GoUpgradeEvent -Path $events -Phase 'go_only_trial_independent_task_started' -Result 'PASS' -Reason $(if($UseAcceptedG10){'previous_go_operator_accepted_risk_plus_candidate_specific_approval'}else{'strict_g10'})
     Disable-ScheduledTask -TaskName $m.g10TaskName -ErrorAction Stop | Out-Null
     $taskDisabled=$true
     $watcherID=[int]$m.oldWatcherPID

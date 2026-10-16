@@ -7,6 +7,7 @@ param(
     [string]$TransactionDirectory = '',
     [string]$ServiceName = 'CodexifyGo',
     [string]$G10TaskName = 'CodexifyGo-G10Observers',
+    [switch]$UseAcceptedG10,
     [switch]$Prepare
 )
 $ErrorActionPreference='Stop'
@@ -100,6 +101,32 @@ $reg=Get-Item ('HKLM:\SYSTEM\CurrentControlSet\Services\'+$ServiceName) -ErrorAc
 $originalImage=[string]$reg.GetValue('ImagePath')
 if (!(Compare-GoPath (Get-GoServiceExecutable $originalImage) $oldExe)){throw 'SCM registry path mismatch'}
 $g10=& (Join-Path $PSScriptRoot 'Assess-ProjectGroupsCanaryReadiness.ps1') -RunDirectory $run | ConvertFrom-Json -ErrorAction Stop
+$riskEvidenceValid=$false
+$candidateApprovalValid=$false
+$riskEvidenceReasons=@()
+$candidateApprovalReason='not_requested'
+$riskFileSHA=''
+$approvalParent=if($TransactionDirectory){[IO.Path]::GetFullPath($TransactionDirectory)}else{Join-Path $stage 'operator-trial-v2'}
+$approvalFilePath=Join-Path $approvalParent 'candidate-approval.json'
+if($UseAcceptedG10){
+    $riskFile=Join-Path $stage 'g10-operator-acceptance-20261016.json'
+    if(!(Test-Path -LiteralPath $riskFile -PathType Leaf)){
+        throw 'No previous-Go operator G10 risk-acceptance record found'
+    }
+    $riskFileSHA=(Get-FileHash -LiteralPath $riskFile -Algorithm SHA256).Hash
+    $accepted=Get-Content -LiteralPath $riskFile -Raw|ConvertFrom-Json -ErrorAction Stop
+    $evidence=Get-GoOnlyTrialAcceptedRiskEvidence -Acceptance $accepted -G10 $g10 -PreviousGoSHA256 $oldSHA
+    $riskEvidenceValid=[bool]$evidence.validForPreviousGoOnly
+    $riskEvidenceReasons=@($evidence.reasons)
+    $candidateApprovalReason='candidate_specific_approval_required'
+    if($riskEvidenceValid -and (Test-Path -LiteralPath $approvalFilePath -PathType Leaf)){
+        $approval=Get-Content -LiteralPath $approvalFilePath -Raw|ConvertFrom-Json -ErrorAction Stop
+        $checkArgs=@{Approval=$approval;PreviousGoSHA256=$oldSHA;CandidateSHA256=$newSHA;CandidateConfigSHA256=$newCfgSHA;SourceCommit=$staged.sourceCommit;AcceptedRiskMarkerSHA256=$riskFileSHA;Now=[DateTimeOffset]::UtcNow}
+        $check=Get-GoOnlyTrialCandidateApprovalEvidence @checkArgs
+        $candidateApprovalValid=[bool]$check.valid
+        $candidateApprovalReason=$check.reason
+    }
+}
 $facts=[pscustomobject]@{
     ServiceRunning=($svc.State -eq 'Running')
     GoCount=$go.Count;WorkerCount=$workers.Count;TunnelCount=$tunnel.Count
@@ -114,6 +141,8 @@ $facts=[pscustomobject]@{
     FeatureFlagDisabled=!([bool]$newConfig.mcp.projectGroupsEnabled)
     ConfigScopePreserved=$true
     G10Decision=$g10.decision
+    G10OperatorEvidenceValid=$riskEvidenceValid
+    CandidateSpecificApprovalValid=$candidateApprovalValid
 }
 $policy=Get-GoOnlyTrialPreflightDecision -Facts $facts
 $transaction=if($TransactionDirectory){[IO.Path]::GetFullPath($TransactionDirectory)}else{Join-Path $stage 'operator-trial-v2'}
@@ -127,6 +156,11 @@ $preflight=[ordered]@{
     oldGoOnlyWatcherCount=$watchers.Count;rustOwners=$rust.Count
     oldGoHash=$oldSHA;candidateGoHash=$newSHA;candidateProfileHash=$newCfgSHA
     candidateSourceCommit=$staged.sourceCommit;g10Decision=$g10.decision
+    useAcceptedG10=[bool]$UseAcceptedG10
+    acceptedOldGoRiskEvidenceValid=$riskEvidenceValid
+    candidateSpecificApprovalValid=$candidateApprovalValid
+    candidateSpecificApprovalReason=$candidateApprovalReason
+    acceptedOldGoRiskEvidenceReasons=$riskEvidenceReasons
     proposedTransaction=$transaction
     liveServiceRestarted=$false;liveWatcherModified=$false
     featureFlagEnabled=$false;rustFallback=$false
@@ -147,6 +181,7 @@ $xmlPath=Join-Path $transaction 'g10-observers-before.xml'
 $operatorFiles=@('GoOnlyUpgrade.psm1','GoOnlyTrialTransaction.psm1','Watch-GoTrial.ps1',
     'Invoke-GoOnlyRecovery.ps1','Invoke-GoOnlyTrialUpgrade.ps1','Prepare-GoOnlyTrialUpgrade.ps1',
     'New-GoOnlyTrialOperatorTask.ps1',
+    'Approve-GoOnlyTrialCandidate.ps1',
     'Assess-ProjectGroupsCanaryReadiness.ps1','Inspect-G10Runtime.ps1')
 $hashes=[ordered]@{}
 foreach($name in $operatorFiles) {
@@ -174,7 +209,9 @@ $manifest=[ordered]@{
     oldGoOnlyWatcherRunHash=(Get-FileHash -LiteralPath $oldRunManifestFile -Algorithm SHA256).Hash
     operatorFiles=$hashes
     preparedG10Decision=$g10.decision
-    preparedExecutionEligible=($policy.decision -eq 'READY_FOR_INDEPENDENT_OPERATOR')
+    useAcceptedG10=[bool]$UseAcceptedG10
+    g10OperatorAcceptanceSHA256=$riskFileSHA
+    preparedExecutionEligible=[bool]$policy.mayMutateSCM
     autoRustFallback=$false
 }
 [IO.File]::WriteAllText((Join-Path $transaction 'manifest.json'),($manifest|ConvertTo-Json -Depth 14),[Text.UTF8Encoding]::new($false))

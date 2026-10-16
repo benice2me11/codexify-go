@@ -6,7 +6,8 @@ Import-Module (Join-Path $PSScriptRoot 'GoOnlyTrialTransaction.psm1') -Force
 # The executor stays uninvoked in CI, but its real PowerShell AST must parse
 # cleanly on Windows (including its explicit, gated recovery branch).
 foreach ($scriptName in @('GoOnlyTrialTransaction.psm1','Prepare-GoOnlyTrialUpgrade.ps1',
-                         'Invoke-GoOnlyTrialUpgrade.ps1','New-GoOnlyTrialOperatorTask.ps1')) {
+                         'Invoke-GoOnlyTrialUpgrade.ps1','New-GoOnlyTrialOperatorTask.ps1',
+                         'Approve-GoOnlyTrialCandidate.ps1')) {
     $tokens = $null
     $problems = $null
     $scriptPath = Join-Path $PSScriptRoot $scriptName
@@ -33,6 +34,108 @@ $healthy = [pscustomobject]@{
 $decision = Get-GoOnlyTrialPreflightDecision -Facts $healthy
 Assert ($decision.decision -eq 'READY_FOR_INDEPENDENT_OPERATOR' -and
     $decision.mayMutateSCM -and !$decision.rustFallback) 'healthy Go-only readiness was rejected'
+
+$waived = $healthy.PSObject.Copy()
+$waived.G10Decision='HOLD'
+$waived | Add-Member -NotePropertyName G10OperatorEvidenceValid -NotePropertyValue $true -Force
+$waived | Add-Member -NotePropertyName CandidateSpecificApprovalValid -NotePropertyValue $false -Force
+$awaitingApproval=Get-GoOnlyTrialPreflightDecision -Facts $waived
+Assert ($awaitingApproval.decision -eq 'HOLD' -and !$awaitingApproval.mayMutateSCM -and
+    $awaitingApproval.reasons -contains 'candidate_specific_approval_required') 'previous Go risk acceptance authorized a new candidate without approval'
+$waived.CandidateSpecificApprovalValid=$true
+$permitted=Get-GoOnlyTrialPreflightDecision -Facts $waived
+Assert ($permitted.decision -eq 'READY_FOR_INDEPENDENT_OPERATOR_WITH_ACCEPTED_RISK' -and
+    $permitted.usedAcceptedRiskException -and $permitted.mayMutateSCM -and
+    $permitted.technicalG10Decision -eq 'HOLD') 'fully approved waiver was not distinguished from strict G10 readiness'
+$waived.RustCount=1
+$blockedRisk=Get-GoOnlyTrialPreflightDecision -Facts $waived
+Assert ($blockedRisk.decision -eq 'HOLD' -and !$blockedRisk.mayMutateSCM) 'accepted risk waived a Rust-owner safety gate'
+$waived.RustCount=0
+$waived.G10Decision='BLOCKED'
+$blockedRisk=Get-GoOnlyTrialPreflightDecision -Facts $waived
+Assert ($blockedRisk.decision -eq 'HOLD' -and !$blockedRisk.mayMutateSCM) 'accepted risk waived a new G10 BLOCKED decision'
+
+$oldHash='8'*64
+$newHash='F'*64
+$cfgHash='A'*64
+$commit='b'*40
+$technicalReasons=@('g10_observation_gap','non_continue_guard_action','soak_window_short')
+$acceptance=[pscustomobject]@{
+    decision='G10_OPERATOR_ACCEPTED_WITH_DEVIATIONS'
+    scope='already_running_windows_CodexifyGo_sha256_only'
+    goSha256=$oldHash
+    originalStrictTechnicalDecision='HOLD'
+    originalStrictHoldReasons=$technicalReasons
+    goToGoCandidateUpgradeApproved=$false
+    rustFallbackAllowed=$false
+}
+$g10=[pscustomobject]@{
+    decision='HOLD'
+    mode='live_read_only'
+    localAssessment='LOCAL_OBSERVED'
+    holdReasons=$technicalReasons
+    topology=[pscustomobject]@{latestGuard='CONTINUE';goCount=2;tunnelDirectChildren=1;rustCount=0}
+    soak=[pscustomobject]@{lastSampleAgeSeconds=2.5;nonContinueCount=2}
+    inspectionWarnings=@()
+}
+$evidence=Get-GoOnlyTrialAcceptedRiskEvidence -Acceptance $acceptance -G10 $g10 -PreviousGoSHA256 $oldHash
+Assert ($evidence.validForPreviousGoOnly -and !$evidence.candidateApproved -and
+    $evidence.technicalG10Decision -eq 'HOLD') 'healthy scoped old-Go acceptance was rejected'
+$tampered=$acceptance.PSObject.Copy()
+$tampered.goSha256=$newHash
+Assert (!(Get-GoOnlyTrialAcceptedRiskEvidence -Acceptance $tampered -G10 $g10 -PreviousGoSHA256 $oldHash).validForPreviousGoOnly) 'old-Go marker accepted a different binary'
+$badG10=$g10.PSObject.Copy()
+$badG10.holdReasons=@($technicalReasons)+@('duplicate_go_processes')
+Assert (!(Get-GoOnlyTrialAcceptedRiskEvidence -Acceptance $acceptance -G10 $badG10 -PreviousGoSHA256 $oldHash).validForPreviousGoOnly) 'unexpected technical G10 hold was waived'
+$badG10=$g10.PSObject.Copy()
+$badG10.soak=[pscustomobject]@{lastSampleAgeSeconds=52}
+Assert (!(Get-GoOnlyTrialAcceptedRiskEvidence -Acceptance $acceptance -G10 $badG10 -PreviousGoSHA256 $oldHash).validForPreviousGoOnly) 'stale controlled guard was waived'
+$badG10=$g10.PSObject.Copy()
+$badG10.topology=[pscustomobject]@{latestGuard='CONTINUE';goCount=3;tunnelDirectChildren=1;rustCount=0}
+Assert (!(Get-GoOnlyTrialAcceptedRiskEvidence -Acceptance $acceptance -G10 $badG10 -PreviousGoSHA256 $oldHash).validForPreviousGoOnly) 'duplicate live Go owner was waived'
+$badG10=$g10.PSObject.Copy()
+$badG10.topology=[pscustomobject]@{latestGuard='BLOCKED';goCount=2;tunnelDirectChildren=1;rustCount=0}
+Assert (!(Get-GoOnlyTrialAcceptedRiskEvidence -Acceptance $acceptance -G10 $badG10 -PreviousGoSHA256 $oldHash).validForPreviousGoOnly) 'blocked guard was waived'
+$badG10=$g10.PSObject.Copy()
+$badG10.soak=[pscustomobject]@{lastSampleAgeSeconds=1;nonContinueCount=3}
+Assert (!(Get-GoOnlyTrialAcceptedRiskEvidence -Acceptance $acceptance -G10 $badG10 -PreviousGoSHA256 $oldHash).validForPreviousGoOnly) 'new unaccepted tunnel recovery HOLD was waived'
+
+$now=[DateTimeOffset]::Parse('2026-10-16T08:30:00Z')
+$markerHash='D'*64
+$approval=[pscustomobject]@{
+    schemaVersion=1
+    intent='GO_ONLY_PROJECT_GROUPS_CANARY_WITH_G10_OPERATOR_RISK_EXCEPTION'
+    explicitOperatorApproval=$true
+    previousGoSHA256=$oldHash
+    candidateGoSHA256=$newHash
+    candidateConfigSHA256=$cfgHash
+    acceptedRiskMarkerSHA256=$markerHash
+    candidateSourceCommit=$commit
+    createdAtUtc=$now.AddMinutes(-4).ToString('o')
+    expiresAtUtc=$now.AddMinutes(26).ToString('o')
+    allowRustFallback=$false
+}
+$approvalArgs=@{PreviousGoSHA256=$oldHash;CandidateSHA256=$newHash;CandidateConfigSHA256=$cfgHash;SourceCommit=$commit;AcceptedRiskMarkerSHA256=$markerHash;Now=$now}
+$valid=Get-GoOnlyTrialCandidateApprovalEvidence -Approval $approval @approvalArgs
+Assert $valid.valid 'specific approval with a 30-minute TTL was rejected'
+$wrong=$approval.PSObject.Copy()
+$wrong.candidateGoSHA256=$oldHash
+Assert (!(Get-GoOnlyTrialCandidateApprovalEvidence -Approval $wrong @approvalArgs).valid) 'approval for wrong candidate was accepted'
+$wrong=$approval.PSObject.Copy()
+$wrong.explicitOperatorApproval=$false
+Assert (!(Get-GoOnlyTrialCandidateApprovalEvidence -Approval $wrong @approvalArgs).valid) 'approval without an explicit operator acknowledgement was accepted'
+$wrong=$approval.PSObject.Copy()
+$wrong.expiresAtUtc=$now.AddMinutes(-1).ToString('o')
+Assert (!(Get-GoOnlyTrialCandidateApprovalEvidence -Approval $wrong @approvalArgs).valid) 'expired candidate approval was accepted'
+$wrong=$approval.PSObject.Copy()
+$wrong.expiresAtUtc=$now.AddMinutes(90).ToString('o')
+Assert (!(Get-GoOnlyTrialCandidateApprovalEvidence -Approval $wrong @approvalArgs).valid) 'overlong candidate approval was accepted'
+$wrong=$approval.PSObject.Copy()
+$wrong.acceptedRiskMarkerSHA256='E'*64
+Assert (!(Get-GoOnlyTrialCandidateApprovalEvidence -Approval $wrong @approvalArgs).valid) 'approval bound to another accepted G10 record was accepted'
+$wrong=$approval.PSObject.Copy()
+$wrong.allowRustFallback=$true
+Assert (!(Get-GoOnlyTrialCandidateApprovalEvidence -Approval $wrong @approvalArgs).valid) 'authorization allowing Rust fallback was accepted'
 
 $checks = @{
     G10Decision = 'HOLD'

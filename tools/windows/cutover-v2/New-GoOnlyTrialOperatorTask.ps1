@@ -6,7 +6,8 @@
 param(
     [Parameter(Mandatory)][string]$TransactionDirectory,
     [switch]$Register,
-    [switch]$OperatorApproved
+    [switch]$OperatorApproved,
+    [switch]$UseAcceptedG10
 )
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath($TransactionDirectory)
@@ -17,19 +18,41 @@ if ([string]$m.transactionKind -ne 'go_only_watch_go_trial_to_go_only' -or
     [string]$m.stageSourceCommit -notmatch '^[a-f0-9]{40}$') {
     throw 'Prepared transaction is not the expected Go-only type'
 }
+if([bool]$m.useAcceptedG10 -ne [bool]$UseAcceptedG10){
+    throw 'Task approval policy does not match the frozen operator transaction'
+}
 $name='CodexifyGo-PGCanary-'+$m.stageSourceCommit.Substring(0,12)
 $executor=Join-Path $root 'operator\Invoke-GoOnlyTrialUpgrade.ps1'
 if (!(Test-Path -LiteralPath $executor -PathType Leaf)){throw 'Prepared independent executor not found'}
-$plan=& $executor -TransactionDirectory $root|ConvertFrom-Json -ErrorAction Stop
+$plan=& $executor -TransactionDirectory $root -UseAcceptedG10:$UseAcceptedG10|ConvertFrom-Json -ErrorAction Stop
+$eligible=if($UseAcceptedG10){
+    ($plan.decision -eq 'READY_FOR_INDEPENDENT_OPERATOR_WITH_ACCEPTED_RISK' -and
+     [bool]$plan.candidateSpecificApprovalValid)
+}else{
+    $plan.decision -eq 'READY_FOR_INDEPENDENT_OPERATOR'
+}
+$approvalSHA=''
+if($UseAcceptedG10 -and [bool]$plan.candidateSpecificApprovalValid){
+    $approvalFile=Join-Path $root 'candidate-approval.json'
+    $approvalSHA=(Get-FileHash -LiteralPath $approvalFile -Algorithm SHA256 -ErrorAction Stop).Hash
+}
 $argsText='-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$executor+
     '" -TransactionDirectory "'+$root+'" -ExpectedSourceCommit "'+$m.stageSourceCommit+
     '" -OperatorTaskName "'+$name+'" -Execute'
+if($UseAcceptedG10){
+    $argsText+=' -UseAcceptedG10'
+    if($approvalSHA){$argsText+=' -ExpectedCandidateApprovalSHA256 "'+$approvalSHA+'"'}
+}
 $spec=[ordered]@{
     checkedAtUtc=[DateTimeOffset]::UtcNow.ToString('o')
     taskName=$name
     mode=$(if($Register){'REGISTER_REQUESTED'}else{'PLAN_ONLY'})
     g10Decision=$plan.decision
-    taskCanBeInstalled=($plan.decision -eq 'READY_FOR_INDEPENDENT_OPERATOR')
+    taskCanBeInstalled=$eligible
+    strictTechnicalG10=$plan.strictTechnicalG10
+    useAcceptedG10=[bool]$UseAcceptedG10
+    candidateSpecificApprovalValid=$plan.candidateSpecificApprovalValid
+    candidateApprovalPinnedSHA256=$(if($approvalSHA){$approvalSHA}else{$null})
     exactCandidateHash=$m.newSha
     operatorRequiresElevation=$true
     operatorRequiresSeparateApproval=$true
@@ -44,8 +67,8 @@ if(!$Register){
     return
 }
 if(!$OperatorApproved){throw 'Register requires an explicit independent-operator approval'}
-if($plan.decision -ne 'READY_FOR_INDEPENDENT_OPERATOR'){
-    throw 'G10 readiness is HOLD; refusing to register an executable operator task'
+if(!$eligible){
+    throw 'G10 safety/candidate approval is HOLD; refusing to register an executable operator task'
 }
 $principal=[Security.Principal.WindowsPrincipal]([Security.Principal.WindowsIdentity]::GetCurrent())
 if(!$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){

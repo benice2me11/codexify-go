@@ -42,6 +42,10 @@ func Version(cfg config.Config) string {
 		// checkout selection API. Keep the old version distinguishable so
 		// clients can suggest a connector refresh instead of reusing v2.
 		version += "+setup-v3"
+		if cfg.MCP.ProjectGroupsEnabled {
+			version += "+project-groups-v1"
+			version += "+setup-v4"
+		}
 	}
 	if cfg.ArtifactIngress.Enabled {
 		version += "+artifact-ingress-v1"

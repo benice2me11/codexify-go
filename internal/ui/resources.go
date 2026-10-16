@@ -6,6 +6,7 @@ const (
 	// A distinct resource URI invalidates cached v2 Setup cards after the
 	// explicit checkout-mode and verified conversation-context redesign.
 	SetupURI       = "ui://codexify-go/setup/v3/mcp-app.html"
+	GroupSetupURI  = "ui://codexify-go/setup/v4/mcp-app.html"
 	LegacySetupURI = "ui://codexify-go/setup/v2/mcp-app.html"
 	// Older Linux Setup cards may still be mounted after an upgrade.
 	LegacyLinuxSetupURI = "ui://codexify-go/setup/v1/mcp-app.html"
@@ -16,13 +17,21 @@ const (
 )
 
 func SetupToolMeta() mcp.Meta {
+	return SetupToolMetaForGroups(false)
+}
+
+func SetupToolMetaForGroups(enabled bool) mcp.Meta {
+	resource := SetupURI
+	if enabled {
+		resource = GroupSetupURI
+	}
 	return mcp.Meta{
 		"ui": map[string]any{
-			"resourceUri": SetupURI,
+			"resourceUri": resource,
 			"visibility":  []string{"model", "app"},
 		},
-		"ui/resourceUri":          SetupURI,
-		"openai/outputTemplate":   SetupURI,
+		"ui/resourceUri":          resource,
+		"openai/outputTemplate":   resource,
 		"openai/widgetAccessible": true,
 	}
 }
@@ -102,20 +111,22 @@ const SetupHTML = `<!doctype html>
 .card{border:1px solid color-mix(in srgb,currentColor 18%,transparent);border-radius:12px;padding:12px}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}button{font:inherit;padding:7px 10px;border-radius:8px;border:1px solid color-mix(in srgb,currentColor 25%,transparent);background:transparent;cursor:pointer}
 .project{display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-top:1px solid color-mix(in srgb,currentColor 12%,transparent)}
-.muted{opacity:.7;font-size:.9em}.mode-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0 6px}select{font:inherit;padding:6px;border-radius:8px;max-width:100%}.warning{margin:5px 0 8px;font-size:.9em}.notice{font-size:.9em;margin:5px 0}code{font-family:ui-monospace,monospace;font-size:.9em;overflow-wrap:anywhere}#error{color:#c44;white-space:pre-wrap}
+.muted{opacity:.7;font-size:.9em}.mode-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0 6px}select{font:inherit;padding:6px;border-radius:8px;max-width:100%}.warning{margin:5px 0 8px;font-size:.9em}.notice{font-size:.9em;margin:5px 0}code{font-family:ui-monospace,monospace;font-size:.9em;overflow-wrap:anywhere}#error{color:#c44;white-space:pre-wrap}.group-heading{font-weight:650;margin:14px 0 5px}.group-member{padding:9px 0;border-top:1px solid color-mix(in srgb,currentColor 12%,transparent)}.group-member .row{margin-top:6px}.group-controls{display:flex;gap:7px;flex-wrap:wrap;align-items:center}.group-controls label{font-size:.88em}.group-path{font-size:.78em;word-break:break-all}
 </style>
 </head>
 <body>
 <div class="card">
   <div class="row"><strong>Codexify Go</strong><button id="refresh">Refresh</button><button id="scratch">Scratch</button><button id="switch" hidden>Change workspace / type</button><button id="restore" hidden>Restore previous workspace</button></div>
-  <div id="status" class="muted">Press Refresh to load workspace status.</div>
-  <div class="mode-row"><label for="workspace-mode"><strong>Workspace type</strong></label><select id="workspace-mode"><option value="auto" selected>Auto (configured policy)</option><option value="source">Source checkout</option><option value="managed">Managed worktree</option></select></div>
+  <div id="status" class="muted" aria-live="polite">Press Refresh to load workspace status.</div>
+  <div id="schema-warning" class="warning" role="status"></div>
+  <div id="mode-row" class="mode-row"><label for="workspace-mode"><strong>Workspace type</strong></label><select id="workspace-mode"><option value="auto" selected>Auto (configured policy)</option><option value="source">Source checkout</option><option value="managed">Managed worktree</option></select></div>
   <div id="mode-warning" class="warning muted"></div>
+  <div id="groups-wrap" hidden><div class="group-heading">Project groups</div><div id="groups"></div><div id="members"></div></div>
   <div id="projects"></div>
-  <div id="error"></div>
+  <div id="error" role="alert"></div>
 </div>
 <script>
-const statusEl=document.getElementById("status"),projectsEl=document.getElementById("projects"),errorEl=document.getElementById("error"),switchBtn=document.getElementById("switch"),restoreBtn=document.getElementById("restore"),modeSelect=document.getElementById("workspace-mode"),warningEl=document.getElementById("mode-warning");
+const statusEl=document.getElementById("status"),projectsEl=document.getElementById("projects"),errorEl=document.getElementById("error"),switchBtn=document.getElementById("switch"),restoreBtn=document.getElementById("restore"),modeSelect=document.getElementById("workspace-mode"),warningEl=document.getElementById("mode-warning"),groupsWrap=document.getElementById("groups-wrap"),groupsEl=document.getElementById("groups"),membersEl=document.getElementById("members"),schemaEl=document.getElementById("schema-warning"),modeRow=document.getElementById("mode-row");
 let uiContext="",observedHostContext="",hostContextRevision=0;
 function setupContext(value){
   if(!value||typeof value!=="object")return "";
@@ -148,7 +159,7 @@ async function call(name,args={}){
   }
   return result;
 }
-let busy=false,currentWorkspace=null,restorePath="",knownProjects=[];
+let busy=false,currentWorkspace=null,restorePath="",knownProjects=[],knownGroups=[],groupsEnabled=false,schemaStale=false;
 modeSelect.value="auto";
 function selectionMode(){return modeSelect.value||"auto"}
 function errorText(e){
@@ -162,7 +173,10 @@ function renderModeWarning(){
 function renderStatus(s){
   const w=s.workspace||null;
   currentWorkspace=w;
-  if(w){
+  modeRow.hidden=!!w&&w.mode==="group";
+  if(w&&w.mode==="group"){
+    statusEl.innerHTML="Group: <strong>"+escapeHTML(w.groupName)+"</strong><div class=notice>Active repository: <strong>"+escapeHTML(w.activeRepository||w.primaryRepository)+"</strong> (primary "+escapeHTML(w.primaryRepository)+")</div><div class=notice>Active checkout: <code>"+escapeHTML(w.projectRoot||"")+"</code></div><div class=muted>Use a member's Make active control to change the default. Explicit repository arguments on tools do not change it. Checkout type changes preserve the previous worktree and files.</div>";
+  }else if(w){
     const actual=w.mode==="scratch"?"Scratch workspace":w.managedWorktree?"Managed worktree":"Source checkout";
     const sourceLine=w.mode==="scratch"?"":"<div class=notice>Source: <code>"+escapeHTML(w.sourceProjectRoot||w.projectRoot||"")+"</code></div>";
     statusEl.innerHTML="Selected: <strong>"+actual+"</strong><div class=notice>Active: <code>"+escapeHTML(w.projectRoot||w.workspaceRoot||"")+"</code></div>"+sourceLine+"<div class=muted>Configured policy: "+escapeHTML(w.worktreeMode||s.worktreeMode||"unknown")+". To change type, use Change workspace / type first. Re-read get_agent_brief after switching.</div>";
@@ -170,9 +184,91 @@ function renderStatus(s){
     statusEl.textContent=s.awaitingSelection?"Choose a workspace. Previous source files and managed worktrees have not been removed.":"No workspace selected.";
   }
   switchBtn.hidden=!w;
+  switchBtn.textContent=w&&w.mode==="group"?"Change workspace / group":"Change workspace / type";
   switchBtn.dataset.path=w&&w.projectRoot||"";
   restoreBtn.hidden=!!w||!s.awaitingSelection||!restorePath;
   if(w)projectsEl.textContent="";
+  renderGroupMembers(w);
+}
+function checkoutSelect(id,kind){
+  const select=document.createElement("select");select.id=id;
+  for(const value of ["source","managed"]){
+    const option=document.createElement("option");option.value=value;
+    option.textContent=value==="source"?"Source checkout":"Managed worktree";
+    select.append(option);
+  }
+  select.value=kind==="managed"?"managed":"source";
+  return select;
+}
+function renderGroupMembers(w){
+  membersEl.textContent="";
+  if(!w||w.mode!=="group"||!Array.isArray(w.repositories))return;
+  const heading=document.createElement("div");heading.className="group-heading";heading.textContent="Group members";
+  membersEl.append(heading);
+  for(const member of w.repositories){
+    const div=document.createElement("div");div.className="group-member";
+    const label=document.createElement("strong");label.textContent=member.alias+(member.alias===w.primaryRepository?" (primary)":"");
+    const state=document.createElement("div");state.className="notice";
+    state.textContent="Checkout: "+(member.checkout==="managed"?"Managed worktree":"Source checkout")+(member.alias===w.activeRepository?" · active default":"");
+    const source=document.createElement("div");source.className="group-path muted";source.textContent="Source: "+(member.sourceProjectRoot||"");
+    const active=document.createElement("div");active.className="group-path muted";active.textContent="Active: "+(member.projectRoot||"");
+    div.append(label,state,source,active);
+    if(member.preservedManagedProjectRoot){
+      const preserved=document.createElement("div");preserved.className="group-path muted";preserved.textContent="Preserved managed: "+member.preservedManagedProjectRoot;
+      div.append(preserved);
+    }
+    const controls=document.createElement("div");controls.className="group-controls";
+    const activeBtn=document.createElement("button");activeBtn.id="member-active-"+member.alias;activeBtn.textContent=member.alias===w.activeRepository?"Active":"Make active";
+    activeBtn.disabled=busy||schemaStale||member.alias===w.activeRepository;
+    activeBtn.onclick=()=>run(async()=>{
+      if(schemaStale)throw new Error("Refresh the connector schema before changing repositories.");
+      await call("set_active_repository",{repository:member.alias});await load();
+    });
+    const kindLabel=document.createElement("label");kindLabel.textContent="Checkout type";kindLabel.htmlFor="member-mode-"+member.alias;
+    const select=checkoutSelect(kindLabel.htmlFor,member.checkout);
+    const typeBtn=document.createElement("button");typeBtn.id="member-switch-"+member.alias;typeBtn.textContent="Switch type";
+    typeBtn.disabled=busy||schemaStale;
+    typeBtn.onclick=()=>run(async()=>{
+      if(schemaStale)throw new Error("Refresh the connector schema before changing checkout types.");
+      if(select.value===member.checkout)return;
+      try{await call("set_repository_checkout",{repository:member.alias,checkout:select.value})}finally{await load()}
+    });
+    controls.append(activeBtn,kindLabel,select,typeBtn);div.append(controls);membersEl.append(div);
+  }
+}
+function renderGroups(list){
+  if(Array.isArray(list))knownGroups=list;
+  groupsWrap.hidden=!groupsEnabled||knownGroups.length===0;
+  groupsEl.textContent="";
+  if(!groupsEnabled||currentWorkspace)return;
+  for(const group of knownGroups){
+    const card=document.createElement("div");card.className="group-member";
+    const name=document.createElement("strong");name.textContent=group.name;
+    const summary=document.createElement("div");summary.className="muted";
+    summary.textContent="Primary: "+group.primary+" · "+(group.repositories||[]).length+" repositories";
+    card.append(name,summary);
+    const checkouts={};
+    for(const member of group.repositories||[]){
+      const controls=document.createElement("div");controls.className="group-controls";
+      const label=document.createElement("label");label.textContent=member.alias+" → "+member.project;
+      label.htmlFor="new-group-"+group.name+"-"+member.alias;
+      const select=checkoutSelect(label.htmlFor,member.checkout);
+      select.onchange=()=>{checkouts[member.alias]=select.value};
+      checkouts[member.alias]=select.value;
+      controls.append(label,select);card.append(controls);
+    }
+    const note=document.createElement("div");note.className="warning muted";
+    note.textContent="Source uses an existing checkout, potentially shared with other conversations. Managed creates an isolated Git worktree.";
+    const choose=document.createElement("button");choose.id="group-select-"+group.name;choose.textContent="Select group";
+    choose.disabled=busy||schemaStale;
+    choose.onclick=()=>run(async()=>{
+      if(schemaStale)throw new Error("Refresh the connector schema before selecting a project group.");
+      if(currentWorkspace)throw new Error("Change workspace / group before selecting another binding.");
+      try{await call("set_project_group",{name:group.name,checkouts})}finally{await load()}
+      restorePath="";
+    });
+    card.append(note,choose);groupsEl.append(card);
+  }
 }
 function renderProjects(list){
   if(list)knownProjects=list.projects||[];
@@ -182,7 +278,7 @@ function renderProjects(list){
     const label=document.createElement("span");
     label.innerHTML="<b>"+escapeHTML(p.name||p.selector)+"</b><br><span class=muted>"+escapeHTML(p.selector)+(p.gitRepository===false?" (not a Git repository)":"")+"</span>";
     const b=document.createElement("button");b.textContent="Select";
-    b.disabled=busy||!!currentWorkspace||(selectionMode()==="managed"&&p.gitRepository===false);
+    b.disabled=busy||schemaStale||!!currentWorkspace||(selectionMode()==="managed"&&p.gitRepository===false);
     if(selectionMode()==="managed"&&p.gitRepository===false)b.title="Managed worktree requires Git";
     else if(currentWorkspace)b.title="Choose Change workspace / type first";
     b.onclick=()=>selectProject(p);
@@ -192,8 +288,14 @@ function renderProjects(list){
 function renderPayload(value){
   const p=structured(value)||value;
   if(!p||typeof p!=="object")return;
+  if(Object.hasOwn(p,"projectGroupsEnabled"))groupsEnabled=!!p.projectGroupsEnabled;
+  if(Object.hasOwn(p,"conversationStale")||Object.hasOwn(p,"connectorSchema")){
+    schemaStale=!!(p.conversationStale||(p.connectorSchema&&p.connectorSchema.refreshRecommended));
+    schemaEl.textContent=schemaStale?"The connector schema is stale. Refresh/reconnect the Codexify Go connector before changing workspace or group bindings.":"";
+  }
   if(Object.hasOwn(p,"projectRoot"))renderStatus({workspace:p});
   else if(Object.hasOwn(p,"workspace")||Object.hasOwn(p,"awaitingSelection")||Object.hasOwn(p,"selected"))renderStatus(p);
+  if(Array.isArray(p.groups))renderGroups(p.groups);
   if(p.projects&&!currentWorkspace)renderProjects(Array.isArray(p.projects)?{projects:p.projects}:p.projects);
 }
 // Host globals are state notifications, never an instruction to call tools.
@@ -208,23 +310,32 @@ function renderHost(event){
 }
 async function run(action){
   if(busy)return;
+  const focusId=document.activeElement&&document.activeElement.id||"";
   busy=true;errorEl.textContent="";
   for(const button of document.querySelectorAll("button"))button.disabled=true;
-  modeSelect.disabled=true;
+  for(const select of document.querySelectorAll("select"))select.disabled=true;
   try{await action()}catch(e){errorEl.textContent=errorText(e)}finally{
-    busy=false;modeSelect.disabled=false;
+    busy=false;
+    for(const select of document.querySelectorAll("select"))select.disabled=false;
     for(const button of document.querySelectorAll("button"))button.disabled=false;
-    renderProjects();
+    renderProjects();renderGroups(knownGroups);renderGroupMembers(currentWorkspace);
+    for(const id of ["scratch","switch","restore"])document.getElementById(id).disabled=schemaStale;
+    if(focusId){
+      const element=document.getElementById(focusId);
+      if(element&&typeof element.focus==="function"&&!element.disabled)element.focus();
+      else if(currentWorkspace&&typeof statusEl.focus==="function"){statusEl.tabIndex=-1;statusEl.focus()}
+    }
   }
 }
 async function load(){
-  renderStatus(structured(await call("setup_status",{}))||{});
+  renderPayload(structured(await call("setup_status",{}))||{});
   if(currentWorkspace){renderProjects({projects:[]});return;}
   renderProjects(structured(await call("list_projects",{limit:40}))||{});
 }
 function refresh(){return run(load)}
 function selectProject(project){
   return run(async()=>{
+    if(schemaStale)throw new Error("Refresh/reconnect the connector before changing workspace bindings.");
     if(currentWorkspace)throw new Error("Already bound. Click Change workspace / type before selecting another checkout.");
     const mode=selectionMode();
     if(mode==="managed"&&project.gitRepository===false)throw new Error("Managed worktree requires a Git repository.");
@@ -241,15 +352,19 @@ function selectProject(project){
 }
 modeSelect.onchange=()=>{renderModeWarning();renderProjects()};
 document.getElementById("refresh").onclick=refresh;
-document.getElementById("scratch").onclick=()=>run(async()=>{await call("set_project_root",{withoutProject:true});restorePath="";await load()});
+document.getElementById("scratch").onclick=()=>run(async()=>{if(schemaStale)throw new Error("Refresh/reconnect the connector before changing workspaces.");await call("set_project_root",{withoutProject:true});restorePath="";await load()});
 switchBtn.onclick=()=>run(async()=>{
+  if(schemaStale)throw new Error("Refresh/reconnect the connector before changing workspaces.");
   const oldRoot=switchBtn.dataset.path||"";
   if(!oldRoot)throw new Error("No selected workspace to switch.");
+  const wasGroup=!!currentWorkspace&&currentWorkspace.mode==="group";
   const change=structured(await call("setup_ui_switch_project",{expectedPath:oldRoot}))||{};
-  if(change.awaitingSelection&&change.previousRoot)restorePath=change.previousRoot;
+  if(wasGroup)restorePath="";
+  else if(change.awaitingSelection&&change.previousRoot)restorePath=change.previousRoot;
   await load();
 });
 restoreBtn.onclick=()=>run(async()=>{
+  if(schemaStale)throw new Error("Refresh/reconnect the connector before restoring workspaces.");
   if(!restorePath)throw new Error("The previous workspace path is unavailable. Use a saved resumePath.");
   const result=structured(await call("set_project_root",{resumePath:restorePath}))||{};
   await load();

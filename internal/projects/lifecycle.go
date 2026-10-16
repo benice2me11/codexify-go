@@ -101,7 +101,14 @@ func (m *Manager) Switch(meta map[string]any, expectedPath string) (WorkspaceCha
 	if current == nil {
 		return WorkspaceChange{}, errors.New("no workspace is selected")
 	}
-	if expectedPath != "" && cleanComparable(current.ProjectRoot) != cleanComparable(expectedPath) {
+	currentVisibleRoot := current.ProjectRoot
+	if current.Mode == "group" {
+		if member, ok := boundGroupMember(*current, current.ActiveRepository); ok {
+			currentVisibleRoot = member.ProjectRoot
+		}
+	}
+	if expectedPath != "" && cleanComparable(currentVisibleRoot) != cleanComparable(expectedPath) &&
+		cleanComparable(current.ProjectRoot) != cleanComparable(expectedPath) {
 		return WorkspaceChange{}, errors.New("workspace changed since the switch request was prepared")
 	}
 
@@ -120,7 +127,7 @@ func (m *Manager) Switch(meta map[string]any, expectedPath string) (WorkspaceCha
 
 	newChange := WorkspaceChange{
 		Revision:          revision,
-		PreviousRoot:      current.ProjectRoot,
+		PreviousRoot:      currentVisibleRoot,
 		AwaitingSelection: true,
 	}
 	if err := m.writeSwitch(identity, newChange); err != nil {
@@ -235,6 +242,11 @@ func (m *Manager) findSavedBindingByRoot(root string) (*Binding, error) {
 		if err != nil {
 			return nil
 		}
+		// A v3 group is never resumed as a v2 single-project binding merely
+		// because its primary checkout path matches resumePath.
+		if binding.Mode == "group" {
+			return nil
+		}
 		if cleanComparable(binding.ProjectRoot) != cleanComparable(root) {
 			return nil
 		}
@@ -268,7 +280,9 @@ func (m *Manager) readSwitch(identity *Identity) (*WorkspaceChange, error) {
 		copyChange := change
 		return &copyChange, nil
 	}
+	m.bindingIO.RLock()
 	data, err := os.ReadFile(m.switchPath(identity))
+	m.bindingIO.RUnlock()
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
@@ -304,7 +318,10 @@ func (m *Manager) writeSwitch(identity *Identity, change WorkspaceChange) error 
 	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	m.bindingIO.Lock()
+	err = os.Rename(tmp, path)
+	m.bindingIO.Unlock()
+	if err != nil {
 		_ = os.Remove(tmp)
 		return err
 	}
@@ -318,5 +335,7 @@ func (m *Manager) finishSwitch(identity *Identity) {
 		m.transientMu.Unlock()
 		return
 	}
+	m.bindingIO.Lock()
 	_ = os.Remove(m.switchPath(identity))
+	m.bindingIO.Unlock()
 }

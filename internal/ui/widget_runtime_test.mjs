@@ -39,7 +39,7 @@ function host(html, options = {}) {
   const document = {
     getElementById(id) { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); },
     createElement: element,
-    querySelectorAll(selector) { assert.equal(selector, 'button'); return all.filter(el => el.tag === 'button'); },
+    querySelectorAll(selector) { assert.ok(['button','select'].includes(selector)); return all.filter(el => el.tag === selector); },
   };
   const listeners = new Map();
   const calls = [];
@@ -48,6 +48,22 @@ function host(html, options = {}) {
   const defaultWorkspace = {projectRoot:sourceRoot,sourceProjectRoot:sourceRoot,managedWorktree:false,worktreeMode:'auto'};
   let currentWorkspace = options.initialWorkspace === undefined ? defaultWorkspace : options.initialWorkspace;
   let previousWorkspace = null, awaitingSelection = false;
+  const fixtureGroups = [{
+    name:'job-search',primary:'work',repositories:[
+      {alias:'work',project:'work-search',checkout:'source',sourceProjectRoot:'C:\\fixture\\work'},
+      {alias:'hh',project:'hh-mcp-server',checkout:'source',sourceProjectRoot:'C:\\fixture\\hh'},
+      {alias:'habr',project:'habr-career-mcp',checkout:'source',sourceProjectRoot:'C:\\fixture\\habr'},
+    ],
+  }];
+  const sourcePath = alias => 'C:\\fixture\\'+alias;
+  const managedPath = alias => 'C:\\fixture\\managed-'+alias;
+  const selectMember = alias => currentWorkspace.repositories.find(member=>member.alias===alias);
+  function updateGroupActiveRoot(){
+    const active=selectMember(currentWorkspace.activeRepository);
+    currentWorkspace.projectRoot=active.projectRoot;
+    currentWorkspace.sourceProjectRoot=active.sourceProjectRoot;
+    currentWorkspace.managedWorktree=active.managedWorktree;
+  }
   const window = {
     addEventListener(name, listener) { const list = listeners.get(name)||[]; list.push(listener); listeners.set(name,list); },
     dispatchEvent(event) { for (const listener of listeners.get(event.type)||[]) listener(event); return true; },
@@ -67,8 +83,47 @@ function host(html, options = {}) {
       if (options.toolError) return {isError:true,content:options.toolError};
       let data;
       switch (name) {
-        case 'setup_status': data={workspace:currentWorkspace,awaitingSelection,worktreeMode:'auto'}; break;
+        case 'setup_status': data={workspace:currentWorkspace,awaitingSelection,worktreeMode:'auto',
+          projectGroupsEnabled:!!options.groups,groups:options.groups?fixtureGroups:[],
+          ...(options.schemaStale?{conversationStale:true,connectorSchema:{status:'stale',refreshRecommended:true}}:{})}; break;
         case 'list_projects': data={projects:[{name:'Fixture',selector:'fixture',gitRepository:true},{name:'Plain project',selector:'plain',gitRepository:false}]}; break;
+        case 'set_project_group':
+          if(currentWorkspace)throw new Error('already bound');
+          if(params.name!=='job-search')throw new Error('unknown fixture group');
+          currentWorkspace={mode:'group',groupName:'job-search',primaryRepository:'work',activeRepository:'work',generation:1,worktreeMode:'auto',
+            repositories:fixtureGroups[0].repositories.map(member=>{
+              const checkout=params.checkouts?.[member.alias]||member.checkout;
+              return {alias:member.alias,checkout,sourceProjectRoot:sourcePath(member.alias),
+                projectRoot:checkout==='managed'?managedPath(member.alias):sourcePath(member.alias),
+                managedWorktree:checkout==='managed',checkoutRevision:1};
+            })};
+          updateGroupActiveRoot();awaitingSelection=false;data=currentWorkspace;
+          break;
+        case 'set_active_repository':
+          if(!currentWorkspace||currentWorkspace.mode!=='group')throw new Error('not bound to group');
+          if(!selectMember(params.repository))throw new Error('unknown member');
+          currentWorkspace.activeRepository=params.repository;currentWorkspace.generation++;
+          updateGroupActiveRoot();data=currentWorkspace;
+          break;
+        case 'set_repository_checkout': {
+          if(!currentWorkspace||currentWorkspace.mode!=='group')throw new Error('not bound to group');
+          const member=selectMember(params.repository);
+          if(!member)throw new Error('unknown member');
+          if(!['source','managed'].includes(params.checkout))throw new Error('invalid checkout');
+          if(member.checkout!==params.checkout){
+            if(params.checkout==='source'){
+              member.preservedManagedProjectRoot=member.projectRoot;member.projectRoot=member.sourceProjectRoot;
+            }else{
+              member.projectRoot=member.preservedManagedProjectRoot||managedPath(member.alias);
+              member.preservedManagedProjectRoot='';
+            }
+            member.managedWorktree=params.checkout==='managed';member.checkout=params.checkout;
+            member.checkoutRevision++;currentWorkspace.generation++;
+            updateGroupActiveRoot();
+          }
+          data=currentWorkspace;
+          break;
+        }
         case 'chat_read': data={user_text:'Fixture unread message',state:'ready'}; break;
         case 'chat_write': data={state:'written'}; break;
         case 'self_update_status': data={status:'up_to_date',currentVersion:'fixture-v1',detail:'fixture status'}; break;
@@ -291,6 +346,83 @@ if (!baseline) {
   await settle();
   assert.equal(tool(managed,'set_project_root').length,1,'host globals triggered an extra selection');
   results.push({name:'WorkspaceModeSelection',auto:'omits createWorktree',source:'explicit false',managed:'explicit true',switch:'two directions',restore:'saved workspace',duplicateCalls:0});
+
+  const groupCatalog=[{name:'job-search',primary:'work',repositories:[
+    {alias:'work',project:'work-search',checkout:'source'},
+    {alias:'hh',project:'hh-mcp-server',checkout:'source'},
+    {alias:'habr',project:'habr-career-mcp',checkout:'source'},
+  ]}];
+  const groupMounted={workspace:null,selected:false,projectGroupsEnabled:true,groups:groupCatalog};
+  const group=host(setup,{
+    groups:true,initialWorkspace:null,initialOutput:groupMounted,initialMetadata:setupMeta,
+  });
+  await settle();
+  assert.equal(group.calls.length,0,'group setup card should render host payload without calls');
+  assert.equal(group.elements.get('groups-wrap').hidden,false);
+  const groupCard=group.elements.get('groups').children[0];
+  assert.ok(groupCard,'group option must exist');
+  const initialHHMode=groupCard.children[3].children[1];
+  assert.equal(initialHHMode.value,'source');
+  initialHHMode.value='managed';initialHHMode.onchange();
+  const selectGroup=groupCard.children.at(-1);
+  for(let i=0;i<20;i++)if(!selectGroup.disabled)selectGroup.onclick();
+  await settle();
+  assert.equal(tool(group,'set_project_group').length,1,'rapid group clicks created duplicate bindings');
+  assert.equal(tool(group,'set_project_group')[0].params.name,'job-search');
+  assert.equal(tool(group,'set_project_group')[0].params.checkouts.hh,'managed','initial member checkout not forwarded');
+  assert.equal(tool(group,'set_project_group')[0].params.checkouts.habr,'source');
+  assert.equal(tool(group,'set_project_group')[0].params.uiContext,setupToken);
+  assert.ok(group.elements.get('status').innerHTML.includes('Group:'));
+  assert.equal(group.elements.get('members').children.length,4,'must render 3 independently managed members');
+  assert.equal(group.elements.get('mode-row').hidden,true,'single workspace mode picker should not appear for group');
+
+  function memberControls(h,index) {
+    const row=h.elements.get('members').children[index+1];
+    assert.ok(row,'missing group member '+index);
+    return row.children.at(-1);
+  }
+  const hh=memberControls(group,1);
+  assert.equal(hh.children[2].value,'managed','group summary lost HH managed kind');
+  hh.children[0].onclick();
+  await settle();
+  assert.equal(tool(group,'set_active_repository').length,1);
+  assert.equal(tool(group,'set_active_repository')[0].params.repository,'hh');
+  assert.ok(group.elements.get('status').innerHTML.includes('Active repository:'));
+  assert.ok(group.elements.get('status').innerHTML.includes('hh'));
+  const hhActive=memberControls(group,1);
+  hhActive.children[2].value='source';
+  hhActive.children[3].onclick();
+  await settle();
+  assert.equal(tool(group,'set_repository_checkout').length,1);
+  assert.equal(tool(group,'set_repository_checkout')[0].params.checkout,'source');
+  assert.equal(tool(group,'set_repository_checkout')[0].params.repository,'hh');
+  const hhSource=memberControls(group,1);
+  hhSource.children[2].value='managed';
+  hhSource.children[3].onclick();
+  await settle();
+  assert.equal(tool(group,'set_repository_checkout').length,2);
+  assert.equal(tool(group,'set_repository_checkout')[1].params.checkout,'managed');
+  assert.equal(tool(group,'set_project_root').length,0,'member switch must not call global set_project_root');
+  assert.equal(group.exhausted,false);
+  const groupCalls=group.calls.length;
+  for(let i=0;i<100;i++)group.emit({theme:i%2?'dark':'light',maxHeight:150+i});
+  await settle();
+  assert.equal(group.calls.length,groupCalls,'group host events caused an MCP tool burst');
+
+  const staleGroup=host(setup,{
+    groups:true,schemaStale:true,initialWorkspace:null,initialMetadata:setupMeta,
+    initialOutput:{...groupMounted,conversationStale:true,connectorSchema:{status:'stale',refreshRecommended:true}},
+  });
+  await settle();
+  assert.ok(staleGroup.elements.get('schema-warning').textContent.includes('Refresh/reconnect'));
+  const staleChoose=staleGroup.elements.get('groups').children[0].children.at(-1);
+  assert.equal(staleChoose.disabled,true,'stale connector must disable group selection');
+  const staleCount=staleGroup.calls.length;
+  staleChoose.onclick();
+  await settle();
+  assert.equal(staleGroup.calls.length,staleCount,'stale group selection should not call tools');
+
+  results.push({name:'ProjectGroupsSetupV4',selection:'three members',active:'member alias',checkout:'managed → source → managed',stale:'blocked',duplicateCalls:0});
 }
 
 console.log(JSON.stringify({mode:baseline?'bounded-original-reproduction':'regression',host:'synthetic; no hosted MCP calls',results},null,2));

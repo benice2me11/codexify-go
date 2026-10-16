@@ -16,10 +16,13 @@ type Git struct {
 	Root *workspace.Root
 }
 
-type GitStatusInput struct{}
+type GitStatusInput struct {
+	Repository string `json:"repository,omitempty" jsonschema:"optional project-group repository alias"`
+}
 
 type GitOutput struct {
-	Output string `json:"output"`
+	Repository *RepositoryContext `json:"repository,omitempty"`
+	Output     string             `json:"output"`
 }
 
 func (g *Git) Status(context.Context, GitStatusInput) (GitOutput, error) {
@@ -27,7 +30,8 @@ func (g *Git) Status(context.Context, GitStatusInput) (GitOutput, error) {
 }
 
 type GitDiffInput struct {
-	Staged bool `json:"staged,omitempty" jsonschema:"show staged diff instead of working tree diff"`
+	Repository string `json:"repository,omitempty" jsonschema:"optional project-group repository alias"`
+	Staged     bool   `json:"staged,omitempty" jsonschema:"show staged diff instead of working tree diff"`
 }
 
 func (g *Git) Diff(_ context.Context, in GitDiffInput) (GitOutput, error) {
@@ -39,7 +43,8 @@ func (g *Git) Diff(_ context.Context, in GitDiffInput) (GitOutput, error) {
 }
 
 type GitLogInput struct {
-	Count int `json:"count,omitempty" jsonschema:"number of commits, default 10 and maximum 100"`
+	Repository string `json:"repository,omitempty" jsonschema:"optional project-group repository alias"`
+	Count      int    `json:"count,omitempty" jsonschema:"number of commits, default 10 and maximum 100"`
 }
 
 func (g *Git) Log(_ context.Context, in GitLogInput) (GitOutput, error) {

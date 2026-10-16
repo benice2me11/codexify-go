@@ -30,7 +30,7 @@ Observed on local Windows 11 / Go 1.26.5:
 | Reenable: same v3 state, active alias and managed worktree restored | PASS |
 | Optional real previous-Go worker in offline fixture: legacy source read succeeds, saved v3 binding stays byte-for-byte identical, then new candidate resumes | PASS (Windows) |
 | Staged worker binary never invokes tunnel or installs service/SCM | PASS |
-| Native Windows/Linux/macOS CI compiled-worker smoke | PENDING new PR CI evidence |
+| Native Windows/Linux/macOS CI compiled-worker smoke | PASS — GitHub Actions [38850369282](https://github.com/benice2me11/codexify-go/actions/runs/38850369282) |
 
 The smoke launches five independent worker instances (four worker restarts) and does not need a tunnel, control-plane API, external source, or production directory. The fixture initializes Git commits in temporary directories only. Its result is **worker process lifecycle**, not native service-manager acceptance. For the optional previous-Go stage, the old binary runs as a standalone fixture worker, never as the Windows SCM service.
 
@@ -45,6 +45,42 @@ Observed without changing production:
 - `CodexifyGo-G10Observers` task: Running. Running task status **does not establish** G10 guard PASS or 24-hour soak.
 - Offline safety fixtures: `Test-GoOnlyUpgrade.ps1` and `Test-G10RuntimeInspection.ps1` executed successfully; policy output `GO_ONLY_UPGRADE_POLICY=PASS`.
 - User Git repositories and personal bindings were **not** modified or copied for this work.
+
+### PG-I7 local readiness assessment — HOLD (2026-10-16)
+
+Implemented `tools/windows/cutover-v2/Assess-ProjectGroupsCanaryReadiness.ps1` as a
+**read-only** preflight over the existing G10 JSONL evidence and local
+`Inspect-G10Runtime.ps1`. It requires a complete observation window, fresh
+last guard, no unexpected gaps, no non-CONTINUE decisions, current Go-only
+topology, and disabled Rust tasks. It never reports production rollout PASS:
+the best possible local result is `LOCAL_READY_FOR_OPERATOR_REVIEW` after
+the other conditions are satisfied.
+
+Read-only command on the existing Windows run directory:
+
+```powershell
+$run = Join-Path $env:USERPROFILE '.codexify-go\cutover-v2\20261015T101000Z-go-only-upgrade'
+./tools/windows/cutover-v2/Assess-ProjectGroupsCanaryReadiness.ps1 -RunDirectory $run
+```
+
+Observed at **2026-10-16T04:24:55Z** (sanitized counts only):
+
+- **Decision: HOLD**, despite `LOCAL_OBSERVED`, one-second-fresh `CONTINUE`,
+  2 Go processes, one owned tunnel, zero Rust processes and both Rust
+  Scheduled Tasks disabled.
+- G10 evidence covers only **17.972 hours**, not the mandatory 24-hour
+  window. The largest observation gap is **31,499 seconds** (~8 h 45 min),
+  with five gaps over 60 seconds.
+- Two `HOLD` observations have safe reason code
+  `tunnel_child_recovery`. They are not evidence of a Rust rollback.
+- Windows last boot was **2026-10-16 05:48 local time**, accounting for the
+  overnight gap. A rebooted machine does not supply uninterrupted soak.
+- Hold reasons: `soak_window_short`, `g10_observation_gap`, and
+  `non_continue_guard_action`.
+
+The accompanying `Test-ProjectGroupsCanaryReadiness.ps1` passed offline
+synthetic clean-window, short-window, gap, HOLD, and missing-file scenarios.
+It runs in Windows CI. The fixture cannot grant production authorization.
 
 The Linux and Mac machine connectors were unavailable (tunnel not seen for over 300 seconds) during this inspection. Native CI runs are a substitute for native worker smoke, **not** real launchd/systemd runtime or production user-machine restart acceptance.
 

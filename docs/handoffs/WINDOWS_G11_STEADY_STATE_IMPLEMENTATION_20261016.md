@@ -1,8 +1,8 @@
 # Windows G11 — implementation and controlled handover (16 October 2026)
 
-**Status: G11_READY_FOR_REVIEW / G11-03 NOT DEPLOYED.**
+**Status: G11-03 LIVE HANDOVER VERIFIED / overall G11_READY_FOR_REVIEW, NOT ACCEPTED. G11-04 and G11-05 remain pending.**
 
-This is a preparation report, not permission to change the live SCM service, Go binary, tunnel, current G10 watcher, production config, Rust tasks or Project Groups. No G10 or G11 acceptance is implied.
+This document includes an original preparation baseline and subsequent Gate 1/Gate 2 execution. The live SCM service, Go binary, tunnel, production config, Rust tasks and Project Groups were not switched. No G10 or overall G11 acceptance is implied. See [Gate 2 live handover record](WINDOWS_G11_GATE2_RECOVERY_HANDOVER_20261016.md).
 
 ## G11-00 — read-only baseline
 
@@ -14,7 +14,7 @@ This is a preparation report, not permission to change the live SCM service, Go 
 - Current config SHA256: 9453FF3D13DCD97287112D13AB5A3E8ABDC64AAAC72C910AD238AA339D6D72F1. MCP diagnostics enabled, Project Groups disabled.
 - Previous Go SHA256: 8BAA786E6BEFDCE5C746419B5A9277D3531A824938396DF8DDDA3FB7200B5880.
 - Frozen operator-v6 manifest SHA256: 2FBFE8E5EE8EBAEE206AF835D84C989F270C7E61C36375545D863C5FE79E0403.
-- G10 observer is still a single running 27-hour Watch-GoTrial.ps1, recovery-armed for the old Go. Watcher PID 20140 was started at 2026-10-16 07:59:54 UTC; estimated expiration 2026-10-17 10:59:54 UTC (13:59:54 Moscow). Task has BootTrigger and IgnoreNew. XML exported-text UTF-16LE SHA256: 851BFB832107712BCC37AF1F2D6038FD95F5B6D93D54F0741BBD29ADA818D507.
+- At the initial audit, G10 observer was one running 27-hour Watch-GoTrial.ps1, recovery-armed for the old Go. Watcher PID 20140 started at 2026-10-16 07:59:54 UTC, originally estimated to expire 2026-10-17 10:59:54 UTC (13:59:54 Moscow). Original Task XML exported-text UTF-16LE SHA256: 851BFB832107712BCC37AF1F2D6038FD95F5B6D93D54F0741BBD29ADA818D507. **After Gate 2 the task is Disabled and PID 20140 exited normally; G11 is the only recovery-armed observer.**
 - Inspector LOCAL_OBSERVED, fresh CONTINUE/within_limits, two Go processes and no Rust. This is not strict 24-hour G10 acceptance for the new binary.
 - Rust tasks Codexify and Codexify Watchdog remain Disabled. The single-use PG canary task was not rerun. Vacancy Hourly Watch was not touched.
 
@@ -45,11 +45,13 @@ Events are UTC, transition-only plus 15-minute heartbeat, bounded JSONL rotation
 - tools/windows/g11/Test-G11SteadyState.ps1 — AST, pure policy, network, duplicate owners, stale watcher, cross-run recovery grace, loop prevention, error handling, offline execution and native Task Scheduler fixtures.
 - .github/workflows/ci.yml — adds Windows native G11 fixtures to the existing Go tests, vet, race, native builds and cross-build gates.
 
-Local G11 fixtures, existing Go-only policy and transaction fixtures, go test -count=1 ./... and go vet ./... passed. This is not CI evidence until the PR runs.
+Local G11 fixtures, existing Go-only policy and transaction fixtures, go test -count=1 ./... and go vet ./... passed. PR #37 commit 03aadb1 CI [38894134781](https://github.com/benice2me11/codexify-go/actions/runs/38894134781) completed successfully.
 
 Inactive candidate normal config: %USERPROFILE%\.codexify-go\staging\g11-normal-candidate-20261016\normal.json. SHA256 76749955DC6E8D73B68C44E11474F15055910070AF0B67F739CB39A5E28794BD. Only mcp.diagnostics.enabled changes true to false; the output is one byte longer. Project Groups is still disabled. The current SCM image has not been altered.
 
-## G11-03 — controlled two-stage handover (NOT EXECUTED)
+## G11-03 — controlled two-stage handover (EXECUTED AND VERIFIED)
+
+**Live update, 16 October 2026:** Gate 1 installed the read-only monitor and verified at least five scheduled runs. Gate 2 was explicitly approved and completed at 11:47:10 UTC: the original G10 task was disabled, `observer.stop` caused the only original watcher to exit, the prior Go backup and Task XML were privately snapshotted, and the G11 task was armed. Two subsequent automatically scheduled samples returned `CONTINUE / within_limits` with Task Scheduler result 0, no recovery attempt and unchanged Go/tunnel PIDs. See [operational evidence report](WINDOWS_G11_GATE2_RECOVERY_HANDOVER_20261016.md). The original procedure below remains the repeatable runbook, **not pending work**.
 
 **Gate 1, after explicit operator approval:**
 
@@ -68,7 +70,7 @@ Inactive candidate normal config: %USERPROFILE%\.codexify-go\staging\g11-normal-
 5. Simulate only on disposable SCM fixtures, not the production service. Test reboot/logout with a separately approved maintenance window; compare task last-run freshness before/after. Do not introduce a forced production crash simply to test a watchdog.
 6. Retain the disabled G10 task/observer, G10 evidence, previous Go files, and one-shot operator transaction as recoverable history; do not delete them. If handover cannot complete before the estimated G10 deadline, obtain a **separate** approval for safe G10 extension instead of silently re-arming or duplicating the watcher.
 
-**G11-03 status remains PENDING** until both gates and real monitoring continuity evidence are completed. Read-only tests or task plans do not establish live G11 readiness.
+**G11-03 status is LIVE HANDOVER VERIFIED.** A future reboot/logout test still requires an independently approved window. Overall G11 stays `G11_READY_FOR_REVIEW`, not `G11_ACCEPTED`, until G11-04 final production profile restart, 30-minute smoke and G11-05 operator acceptance. The current-binary G10 did **not** reach a new strict 24-hour PASS before the handover.
 
 ## G11-04 — separate normal-profile switch and 30-minute smoke (planned)
 

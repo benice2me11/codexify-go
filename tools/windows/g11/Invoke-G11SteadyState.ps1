@@ -154,7 +154,12 @@ function Write-G11OperatorAlert([string]$Action,[string]$Reason) {
     }catch{}
 }
 
-$mutex=Enter-G11Mutex
+# Offline fixture invocations must not contend with the live SYSTEM monitor's
+# Global mutex (which can have a more restrictive security descriptor). Keep
+# the one stable global name exclusively for real scheduled invocations.
+$mutexName=if($Offline){'Local\CodexifyG11Offline-'+[guid]::NewGuid().ToString('N')}
+           else{'Global\CodexifyGo.G11SteadyState'}
+$mutex=Enter-G11Mutex -Name $mutexName
 if($null -eq $mutex){
     [pscustomobject]@{action='DUPLICATE_SKIPPED';mutatedService=$false}|ConvertTo-Json -Compress
     return

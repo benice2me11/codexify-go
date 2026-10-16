@@ -28,10 +28,11 @@ Observed on local Windows 11 / Go 1.26.5:
 | Source–Managed roundtrip preserves dirty managed worktree, revokes old artifact | PASS |
 | Feature disabled: group tools hidden, v3 binding fails closed | PASS |
 | Reenable: same v3 state, active alias and managed worktree restored | PASS |
+| Optional real previous-Go worker in offline fixture: legacy source read succeeds, saved v3 binding stays byte-for-byte identical, then new candidate resumes | PASS (Windows) |
 | Staged worker binary never invokes tunnel or installs service/SCM | PASS |
 | Native Windows/Linux/macOS CI compiled-worker smoke | PENDING new PR CI evidence |
 
-The smoke launches five independent worker instances (four worker restarts) and does not need a tunnel, control-plane API, external source, or production directory. The fixture initializes Git commits in temporary directories only. Its result is **worker process lifecycle**, not native service-manager acceptance.
+The smoke launches five independent worker instances (four worker restarts) and does not need a tunnel, control-plane API, external source, or production directory. The fixture initializes Git commits in temporary directories only. Its result is **worker process lifecycle**, not native service-manager acceptance. For the optional previous-Go stage, the old binary runs as a standalone fixture worker, never as the Windows SCM service.
 
 ## Live Windows preflight (read-only)
 
@@ -74,6 +75,6 @@ Do not mix this staged feature into the current `v0.9.0` release-candidate/stabl
 | PG-A05 | PARTIAL | Negative path/session/resource cases PASS; adversarial OS-handle race protections not promised |
 | PG-A06 | PARTIAL | Setup v4 harness and mock upstream PASS; hosted UI/live upstream/429 check pending |
 | PG-A07 | PARTIAL | Full Go test/vet, race and native compiled-worker CI planned; macOS launchd/Linux systemd user lifecycle not run |
-| PG-A08 | NOT RUN | Operator-approved production Go-only canary/restart/rollback and G10 evidence needed |
+| PG-A08 | PARTIAL / LIVE NOT RUN | Previous-Go binary compatibility and v3 preservation passed offline; operator-approved production Go-only canary/restart/rollback and G10 evidence needed |
 
 Do not report production Project Groups as enabled or claim a stable release until every mandatory gate has independent evidence.

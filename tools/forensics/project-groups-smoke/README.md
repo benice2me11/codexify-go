@@ -11,6 +11,13 @@ go run ./tools/forensics/project-groups-smoke "$env:TEMP\codexify-go-pg-smoke.ex
 
 On Linux/macOS, build without `.exe` and use that path as the second argument.
 
+An optional **third positional argument** is an independently verified
+previous Go executable. During the feature-off stage the harness launches
+that actual older Go worker in its isolated fixture, confirms that it can
+still select/read a legacy source checkout, and ensures it does not rewrite
+the saved v3 binding. The final stage starts the candidate again and
+resumes the same v3 group. Never pass a Rust binary.
+
 ## Test sequence
 
 The harness creates three **disposable Git repositories**, a private configuration, memory/artifact/chat/binding directories, and an ephemeral loopback HTTP listener for each worker instance. It launches the exact compiled candidate with `worker run --config <fixture>`, waits for health, and connects through a fresh MCP transport for each process.
@@ -19,6 +26,8 @@ The harness creates three **disposable Git repositories**, a private configurati
 - After restart 1: resumes the **same conversation identity**, checks the persisted managed root, dirty content, active alias and last-diff checkpoint, reads the still-authorized artifact, switches hh to source and back, ensures the old artifact has been revoked and no worktree data was lost.
 - After restart 2: validates the active alias, managed checkout, dirty file and primary `CHAT.md` remain stable; confirms the old resource token has not revived.
 - Feature-off worker: group tools disappear and the saved v3 binding fails closed.
+- Optional previous-Go worker: legacy source selection and read-only file access
+  still work without interpreting or mutating the saved v3 group.
 - Feature-on worker: verifies the same v3 binding, alias and dirty managed checkout can be resumed without migration or data loss.
 
 The five worker launches include **four worker restarts**, of which the first two directly satisfy the process-restart fixture goal. All operations run under the test process and temporary Git trees; cleanup removes the spawned process and fixture tree. No real tunnel, Windows SCM, launchd or systemd unit is created.
@@ -34,6 +43,10 @@ PG_SMOKE_STAGE_REENABLE=PASS
 PG_SMOKE_RESTARTS=4;FEATURE_DISABLE_REENABLE=PASS;REAL_TUNNEL=OFF;SCM=UNTOUCHED
 PROJECT_GROUPS_COMPILED_WORKER_SMOKE=PASS
 ```
+
+With the optional previous executable, output also includes
+`PG_SMOKE_PREVIOUS_GO_BINARY_ROLLBACK=PASS`. This is an **isolated binary
+compatibility rehearsal**, not a Windows SCM rollback or tunnel recovery.
 
 ## Explicit limits
 

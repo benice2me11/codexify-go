@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/benice2me11/codexify-go/internal/config"
+	"github.com/benice2me11/codexify-go/internal/projects"
 	"github.com/benice2me11/codexify-go/internal/ui"
 	"github.com/benice2me11/codexify-go/internal/workspace"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -32,6 +33,7 @@ type fixture struct {
 	cfg       config.Config
 	cfgPath   string
 	candidate string
+	previous  string
 	marker    string
 	managed   string
 	artifact  string
@@ -45,10 +47,14 @@ type runningWorker struct {
 }
 
 func main() {
-	if len(os.Args) != 2 {
-		fatal(errors.New("usage: go run ./tools/forensics/project-groups-smoke <compiled-codexify-go-binary>"))
+	if len(os.Args) != 2 && len(os.Args) != 3 {
+		fatal(errors.New("usage: go run ./tools/forensics/project-groups-smoke <compiled-codexify-go-binary> [previous-verified-go-binary]"))
 	}
-	if err := run(os.Args[1]); err != nil {
+	previous := ""
+	if len(os.Args) == 3 {
+		previous = os.Args[2]
+	}
+	if err := run(os.Args[1], previous); err != nil {
 		fatal(err)
 	}
 	fmt.Println("PROJECT_GROUPS_COMPILED_WORKER_SMOKE=PASS")
@@ -68,13 +74,23 @@ func mustGit(path string, args ...string) error {
 	return nil
 }
 
-func setup(candidate string) (_ *fixture, err error) {
+func setup(candidate, previous string) (_ *fixture, err error) {
 	bin, err := filepath.Abs(candidate)
 	if err != nil {
 		return nil, err
 	}
 	if _, err := os.Stat(bin); err != nil {
 		return nil, fmt.Errorf("compiled candidate not found: %w", err)
+	}
+	oldBinary := ""
+	if previous != "" {
+		oldBinary, err = filepath.Abs(previous)
+		if err != nil {
+			return nil, err
+		}
+		if _, err = os.Stat(oldBinary); err != nil {
+			return nil, fmt.Errorf("previous verified Go binary not found: %w", err)
+		}
 	}
 	dir, err := os.MkdirTemp("", "pg-compiled-worker-*")
 	if err != nil {
@@ -86,7 +102,7 @@ func setup(candidate string) (_ *fixture, err error) {
 		}
 	}()
 	f := &fixture{
-		dir: dir, candidate: bin, cfgPath: filepath.Join(dir, "config.json"),
+		dir: dir, candidate: bin, previous: oldBinary, cfgPath: filepath.Join(dir, "config.json"),
 		repos: map[string]string{
 			"work": filepath.Join(dir, "work-search"),
 			"hh":   filepath.Join(dir, "hh-mcp-server"),
@@ -217,7 +233,7 @@ func availablePort() (int, error) {
 	return port, nil
 }
 
-func (f *fixture) start(ctx context.Context, enabled bool) (_ *runningWorker, err error) {
+func (f *fixture) start(ctx context.Context, enabled, usePrevious bool) (_ *runningWorker, err error) {
 	port, err := availablePort()
 	if err != nil {
 		return nil, err
@@ -226,7 +242,11 @@ func (f *fixture) start(ctx context.Context, enabled bool) (_ *runningWorker, er
 		return nil, err
 	}
 	w := &runningWorker{output: &bytes.Buffer{}}
-	w.cmd = exec.CommandContext(ctx, f.candidate, "worker", "run", "--config", f.cfgPath)
+	binary := f.candidate
+	if usePrevious && f.previous != "" {
+		binary = f.previous
+	}
+	w.cmd = exec.CommandContext(ctx, binary, "worker", "run", "--config", f.cfgPath)
 	w.cmd.Env = append(os.Environ(),
 		"USERPROFILE="+filepath.Join(f.dir, "home"),
 		"HOME="+filepath.Join(f.dir, "home"),
@@ -620,6 +640,27 @@ func (f *fixture) disabled(ctx context.Context, w *runningWorker) error {
 	if err := w.expectDenied(ctx, "get_environment", nil); err != nil {
 		return err
 	}
+	if f.previous != "" {
+		// Actual Go-only rollback must leave v3 bindings untouched and
+		// continue to serve a separately selected legacy source checkout.
+		legacyMeta := mcp.Meta{"openai/session": "pg-smoke-legacy-rollback-chat"}
+		legacy, err := w.session.CallTool(ctx, &mcp.CallToolParams{
+			Meta: legacyMeta, Name: "set_project_root",
+			Arguments: map[string]any{"path": "work-search", "createWorktree": false},
+		})
+		if err != nil || legacy == nil || legacy.IsError {
+			return fmt.Errorf("previous Go binary could not select legacy source checkout: %v %+v", err, legacy)
+		}
+		read, err := w.session.CallTool(ctx, &mcp.CallToolParams{
+			Meta: legacyMeta, Name: "read_file",
+			Arguments: map[string]any{"path": "README.md"},
+		})
+		if err != nil || read == nil || read.IsError ||
+			!strings.Contains(fmt.Sprint(read.StructuredContent), "compiled-work") {
+			return fmt.Errorf("previous Go binary failed legacy read-only operation: %v %+v", err, read)
+		}
+		fmt.Println("PG_SMOKE_PREVIOUS_GO_BINARY_ROLLBACK=PASS")
+	}
 	// Feature-off must fail closed on a v3 chat while retaining the binding
 	// bytes unchanged for an explicit future re-enable.
 	fmt.Println("PG_SMOKE_STAGE_FLAG_OFF=PASS")
@@ -645,16 +686,27 @@ func (f *fixture) reenabled(ctx context.Context, w *runningWorker) error {
 	fmt.Println("PG_SMOKE_STAGE_REENABLE=PASS")
 	return nil
 }
-func run(candidate string) error {
+func run(candidate, previous string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
-	f, err := setup(candidate)
+	f, err := setup(candidate, previous)
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(f.dir)
+	var beforeRollback []byte
 	for step := 0; step < 5; step++ {
-		w, err := f.start(ctx, step != 3)
+		if step == 3 {
+			identity := projects.IdentityFromMeta(map[string]any{"openai/session": smokeConversation})
+			if identity == nil {
+				return errors.New("could not resolve fixture group conversation identity")
+			}
+			beforeRollback, err = os.ReadFile(filepath.Join(f.cfg.MCP.BindingsDir, identity.Key+".json"))
+			if err != nil {
+				return fmt.Errorf("capture v3 binding before Go-only fallback: %w", err)
+			}
+		}
+		w, err := f.start(ctx, step != 3, step == 3)
 		if err != nil {
 			return fmt.Errorf("worker stage %d startup: %w", step, err)
 		}
@@ -674,6 +726,13 @@ func run(candidate string) error {
 		w.close()
 		if stepErr != nil {
 			return fmt.Errorf("worker stage %d: %w", step, stepErr)
+		}
+		if step == 3 {
+			identity := projects.IdentityFromMeta(map[string]any{"openai/session": smokeConversation})
+			afterRollback, readErr := os.ReadFile(filepath.Join(f.cfg.MCP.BindingsDir, identity.Key+".json"))
+			if readErr != nil || !bytes.Equal(beforeRollback, afterRollback) {
+				return fmt.Errorf("Go-only fallback changed saved v3 binding: %v", readErr)
+			}
 		}
 	}
 	fmt.Println("PG_SMOKE_RESTARTS=4;FEATURE_DISABLE_REENABLE=PASS;REAL_TUNNEL=OFF;SCM=UNTOUCHED")

@@ -78,8 +78,11 @@ type countingFactory struct {
 }
 
 func (f *countingFactory) Start(ctx context.Context) (Process, error) {
-	f.starts.Add(1)
-	return f.inner.Start(ctx)
+	proc, err := f.inner.Start(ctx)
+	if err == nil {
+		f.starts.Add(1)
+	}
+	return proc, err
 }
 
 func TestSupervisorRestartsRealExitedProcess(t *testing.T) {
@@ -91,7 +94,10 @@ func TestSupervisorRestartsRealExitedProcess(t *testing.T) {
 		Output: io.Discard,
 	}
 	factory := &countingFactory{inner: inner}
-	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	// Windows GitHub runners can need substantially more than 150 ms for
+	// three separate cmd.exe process launches. Await the *event* we are
+	// testing instead of assuming a fixed wall-clock number of launches.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	s := &Supervisor{
@@ -106,10 +112,26 @@ func TestSupervisorRestartsRealExitedProcess(t *testing.T) {
 		},
 		Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
-	if err := s.Run(ctx); err != nil {
-		t.Fatal(err)
+	finished := make(chan error, 1)
+	go func() { finished <- s.Run(ctx) }()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for factory.starts.Load() < 3 {
+		select {
+		case err := <-finished:
+			t.Fatalf("supervisor exited before the third successful launch: %v; starts=%d", err, factory.starts.Load())
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for three successful real process launches: starts=%d", factory.starts.Load())
+		case <-ticker.C:
+		}
 	}
-	if got := factory.starts.Load(); got < 3 {
-		t.Fatalf("expected multiple restarts, got %d starts", got)
+	cancel()
+	select {
+	case err := <-finished:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("supervisor did not stop after cancellation")
 	}
 }

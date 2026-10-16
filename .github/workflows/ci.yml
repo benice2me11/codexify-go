@@ -44,6 +44,10 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./tools/windows/cutover-v2/Test-ProjectGroupsCanaryReadiness.ps1
+      - name: G11 steady-state supervision policy, offline monitor and AST
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tools/windows/g11/Test-G11SteadyState.ps1
       - name: Build native binary
         shell: bash
         run: |

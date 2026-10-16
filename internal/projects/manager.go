@@ -83,6 +83,16 @@ func New(cfg config.MCPConfig) (*Manager, error) {
 		// consistently for `git worktree add` destinations.
 		cfg.Worktrees.Root = workspace.NormalizePathIdentity(cfg.Worktrees.Root)
 	}
+	if cfg.ProjectGroupsEnabled {
+		// A configured path may be an alias (notably /var -> /private/var
+		// on macOS). Group binding identity and containment checks must
+		// compare canonical paths, including a not-yet-created worktrees root.
+		canonical, canonicalErr := workspace.Canonical(cfg.Worktrees.Root)
+		if canonicalErr != nil {
+			return nil, fmt.Errorf("canonicalize group worktrees root: %w", canonicalErr)
+		}
+		cfg.Worktrees.Root = canonical
+	}
 	if strings.TrimSpace(cfg.Worktrees.Mode) == "" {
 		cfg.Worktrees.Mode = "auto"
 	}

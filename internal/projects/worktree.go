@@ -82,7 +82,21 @@ func (m *Manager) createManagedWorktreeAt(identity *Identity, selected, gitRoot,
 		_ = removeManagedWorktree(gitRoot, worktreeGitRoot)
 		return ManagedWorktree{}, fmt.Errorf("project path missing in managed worktree: %w", err)
 	}
-	return ManagedWorktree{ProjectRoot: projectRoot, GitRoot: worktreeGitRoot, Branch: branch}, nil
+	// Persist the same physical path that workspace.New returns on the
+	// next request. On macOS temp paths may be under /var, but the
+	// resolved path is /private/var; on Windows 8.3/extended path aliases
+	// can likewise differ without any checkout replacement.
+	canonicalGitRoot, err := workspace.Canonical(worktreeGitRoot)
+	if err != nil {
+		_ = removeManagedWorktree(gitRoot, worktreeGitRoot)
+		return ManagedWorktree{}, fmt.Errorf("canonicalize managed Git root: %w", err)
+	}
+	canonicalProjectRoot, err := workspace.Canonical(projectRoot)
+	if err != nil {
+		_ = removeManagedWorktree(gitRoot, worktreeGitRoot)
+		return ManagedWorktree{}, fmt.Errorf("canonicalize managed project root: %w", err)
+	}
+	return ManagedWorktree{ProjectRoot: canonicalProjectRoot, GitRoot: canonicalGitRoot, Branch: branch}, nil
 }
 
 func removeManagedWorktree(sourceGitRoot, worktreeGitRoot string) error {

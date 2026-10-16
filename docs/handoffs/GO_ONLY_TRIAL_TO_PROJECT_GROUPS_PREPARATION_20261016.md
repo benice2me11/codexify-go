@@ -2,6 +2,8 @@
 
 **Status:** PREPARED (read-only operator snapshot), execution **HOLD**, production SCM unchanged.
 
+**2026-10-16 G10 operator decision:** The user accepted the currently deployed Go-only instance with a documented exception for incomplete continuous soak. See `docs/handoffs/WINDOWS_G10_OPERATOR_RISK_ACCEPTANCE_20261016.md`. The *strict measurement* and the independent Project Groups canary preflight still report HOLD. Do not confuse acceptance of the **previous/current Go** with approval to restart into the **new Go candidate**.
+
 **Source revision:** `main` at `cd6b5bd59dea0be35e3107446dfddce322f41ad2`. The staged candidate was compiled from this revision and previously passed Windows/Linux/macOS native CI plus compiled-worker and previous-Go fixture smoke.
 
 **Operator scripts:** merged through PR #30 at `b7a39f08717dee6b3cfee1316694e3b553f827f4`; the frozen operator source is `00647a6e976105d2ea641d0eadb79cad5db80c5e`, which passed all 11 checks in [CI 38858554632](https://github.com/benice2me11/codexify-go/actions/runs/38858554632). Only the PowerShell/docs/CI files changed after the Go binary was built.

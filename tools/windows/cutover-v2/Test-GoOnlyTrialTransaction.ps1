@@ -137,5 +137,10 @@ $candidate.mcp.upstreams[0].command = 'changed'
 $rejected = $false
 try { Assert-GoOnlyTrialProfile -Previous $baseline -Candidate $candidate | Out-Null }catch{$rejected=$true}
 Assert $rejected 'different upstream definition was accepted'
+$candidate.mcp.upstreams[0].command = 'read-only'
+$candidate | Add-Member -NotePropertyName supervisor -NotePropertyValue @{healthInterval='1ms'} -Force
+$rejected = $false
+try { Assert-GoOnlyTrialProfile -Previous $baseline -Candidate $candidate | Out-Null }catch{$rejected=$true}
+Assert $rejected 'unrelated supervisor change was accepted'
 
 Write-Output 'GO_ONLY_TRIAL_TRANSACTION_POLICY=PASS'

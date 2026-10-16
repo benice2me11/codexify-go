@@ -125,6 +125,23 @@ function Assert-GoOnlyTrialProfile {
             throw 'candidate group member differs from expected read-only source rollout'
         }
     }
+
+    # Guard the *whole* production profile against accidental non-group
+    # mutations, not just the tunnel id and bindings root. The staged profile
+    # is produced by copying the previous production profile and adding the
+    # three explicit group catalog fields. A silent change to service
+    # supervision, tunnel polling, auth, skills or artifact settings is
+    # forbidden during this binary-only Go-to-Go transition.
+    $before = $Previous | ConvertTo-Json -Depth 70 | ConvertFrom-Json
+    $after = $Candidate | ConvertTo-Json -Depth 70 | ConvertFrom-Json
+    foreach ($field in @('projects','projectGroups','projectGroupsEnabled')) {
+        [void]$before.mcp.PSObject.Properties.Remove($field)
+        [void]$after.mcp.PSObject.Properties.Remove($field)
+    }
+    if (($before | ConvertTo-Json -Depth 70 -Compress) -cne
+        ($after | ConvertTo-Json -Depth 70 -Compress)) {
+        throw 'candidate changed production profile outside explicit Project Groups catalog'
+    }
     return $true
 }
 

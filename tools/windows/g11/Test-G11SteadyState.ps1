@@ -118,7 +118,7 @@ try {
     Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
 }
 
-$root=Join-Path $env:TEMP ('codexify-g11-fixture-'+[guid]::NewGuid().ToString('N'))
+$root=[IO.Path]::GetFullPath((Join-Path $env:TEMP ('codexify-g11-fixture-'+[guid]::NewGuid().ToString('N'))))
 New-Item -ItemType Directory -Path $root|Out-Null
 try{
     $policy=Join-Path $root 'pins.json'
@@ -174,9 +174,14 @@ try{
         [string]$settings.MultipleInstances -eq 'IgnoreNew' -and
         [string]$system.LogonType -eq 'ServiceAccount') 'Windows native durable no-overlap task spec'
 }finally{
-    $prefix=[IO.Path]::GetFullPath($env:TEMP).TrimEnd('\')+'\'
-    if(!$root.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase) -or
-        (Split-Path -Leaf $root) -notmatch '^codexify-g11-fixture-[a-f0-9]{32}$'){throw 'Unsafe fixture cleanup'}
+    # PowerShell 5.1 / 7+ can format Windows paths with different separators.
+    # Compare normalized *parent directories* instead of textual prefixes.
+    $tempParent=[IO.Path]::GetFullPath($env:TEMP).TrimEnd('\','/')
+    $fixtureParent=[IO.Path]::GetFullPath((Split-Path -Parent $root)).TrimEnd('\','/')
+    if(![string]::Equals($fixtureParent,$tempParent,[StringComparison]::OrdinalIgnoreCase) -or
+        [IO.Path]::GetFileName($root.TrimEnd('\','/')) -notmatch '^codexify-g11-fixture-[a-f0-9]{32}$'){
+        throw ('Unsafe fixture cleanup: parent verification failed; expectedTmp='+$tempParent+' actualParent='+$fixtureParent)
+    }
     Remove-Item -LiteralPath $root -Recurse -Force
 }
 'G11_STEADY_STATE_OFFLINE=PASS'

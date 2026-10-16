@@ -54,6 +54,14 @@ $xml=Join-Path $root 'g10-observers-before.xml'
 if ((Get-FileHash -LiteralPath $xml -Algorithm SHA256).Hash -ne [string]$m.taskXmlSHA) {
     throw 'Frozen original G10 task XML changed'
 }
+# The G10 task is part of the recovery mechanism. Compare its complete
+# current definition, not merely the action string, before allowing
+# changes to the SCM or watcher. Last-run statistics are not in this XML.
+$savedTaskXML=[IO.File]::ReadAllText($xml)
+$currentTaskXML=Export-ScheduledTask -TaskName $m.g10TaskName -ErrorAction Stop
+if($savedTaskXML -cne $currentTaskXML){
+    throw 'Live G10 task definition changed since snapshot; prepare a fresh Go-only transaction'
+}
 $stage=Split-Path -Parent $root
 $planRaw=& (Join-Path $PSScriptRoot 'Prepare-GoOnlyTrialUpgrade.ps1') -StagingDirectory $stage -CurrentG10RunDirectory $m.oldRunDirectory -TransactionDirectory $root -ServiceName $m.serviceName -G10TaskName $m.g10TaskName
 $plan=$planRaw | ConvertFrom-Json -ErrorAction Stop

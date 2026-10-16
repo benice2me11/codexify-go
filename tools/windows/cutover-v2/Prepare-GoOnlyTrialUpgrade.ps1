@@ -70,9 +70,11 @@ $go=@($all|Where-Object{$_.Name -ieq 'codexify-go.exe'})
 $rust=@($all|Where-Object{$_.Name -ieq 'codexify.exe'})
 $workers=@($go|Where-Object{[int]$_.ParentProcessId -eq [int]$svc.ProcessId})
 $tunnel=@($all|Where-Object{$_.Name -ieq 'tunnel-client-runtime.exe' -and [int]$_.ParentProcessId -eq [int]$svc.ProcessId})
-$watchers=@($all|Where-Object{
+$allGoOnlyWatchers=@($all|Where-Object{
     $_.Name -ieq 'powershell.exe' -and
-    [string]$_.CommandLine -match '(?i)-File\s+"?[^"]*Watch-GoTrial[.]ps1(?:"|\s|$)' -and
+    [string]$_.CommandLine -match '(?i)-File\s+"?[^"]*Watch-GoTrial[.]ps1(?:"|\s|$)'
+})
+$watchers=@($allGoOnlyWatchers|Where-Object{
     [string]$_.CommandLine -match '(?i)-TransactionDirectory\s+' -and
     [string]$_.CommandLine.IndexOf($run,[StringComparison]::OrdinalIgnoreCase) -ge 0
 })
@@ -102,8 +104,8 @@ $facts=[pscustomobject]@{
     ServiceRunning=($svc.State -eq 'Running')
     GoCount=$go.Count;WorkerCount=$workers.Count;TunnelCount=$tunnel.Count
     RustCount=$rust.Count;RustTasksDisabled=$rustTasksDisabled
-    WatcherCount=$watchers.Count
-    WatcherMatchesLiveGo=($watchers.Count -eq 1 -and [string]$watchers[0].CommandLine -match '(?i)-ArmGoRecovery')
+    WatcherCount=$allGoOnlyWatchers.Count
+    WatcherMatchesLiveGo=($allGoOnlyWatchers.Count -eq 1 -and $watchers.Count -eq 1 -and [string]$watchers[0].CommandLine -match '(?i)-ArmGoRecovery')
     WatcherTaskPinned=$taskPinned;BootTriggerPresent=($boot.Count -gt 0)
     WatcherHighest=($task.Principal.RunLevel -eq 'Highest')
     WatcherRecoveryArmed=($actions.Count -eq 1 -and [string]$actions[0].Arguments -match '(?i)-ArmGoRecovery')

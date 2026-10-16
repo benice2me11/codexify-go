@@ -42,6 +42,7 @@ $checks = @{
     RustCount = 1
     RustTasksDisabled = $false
     WatcherCount = 0
+    # Two simultaneous Go-only Watch-GoTrial watchers must not pass.
     WatcherMatchesLiveGo = $false
     WatcherTaskPinned = $false
     BootTriggerPresent = $false
@@ -63,6 +64,11 @@ foreach ($name in @($checks.Keys)) {
     Assert ($blocked.decision -eq 'HOLD' -and !$blocked.mayMutateSCM -and
         $blocked.reasons.Count -gt 0 -and !$blocked.rustFallback) "unsafe scenario $name passed"
 }
+$duplicated = $healthy.PSObject.Copy()
+$duplicated.WatcherCount = 2
+$duplicateDecision=Get-GoOnlyTrialPreflightDecision -Facts $duplicated
+Assert ($duplicateDecision.decision -eq 'HOLD' -and
+    $duplicateDecision.reasons -contains 'go_only_watcher_not_uniquely_owned') 'two Go-only watchers were accepted'
 
 $recoveryCases = @(
     @{Changed=$false; Owner='previous_go'; Disabled=$false; Expected='NO_MUTATION_NEEDED'},

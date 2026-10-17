@@ -68,11 +68,11 @@ function WriteEvent([string]$Event,[string]$Outcome) {
     [pscustomobject]@{timeUtc=[DateTimeOffset]::UtcNow.ToString('o');event=$Event;outcome=$Outcome}|
         ConvertTo-Json -Compress|Add-Content -LiteralPath $events -Encoding UTF8 -ErrorAction Stop
 }
-function WriteStatus([string]$Status,[int]$Pid=0) {
+function WriteStatus([string]$Status,[int]$ServicePid=0) {
     $s=[pscustomobject]@{
         timeUtc=[DateTimeOffset]::UtcNow.ToString('o')
         status=$Status;serviceName='CodexifyGo'
-        previousPid=$initialPid;currentPid=$Pid
+        previousPid=$initialPid;currentPid=$ServicePid
         rustFallback=$false;projectGroupsEnabled=$false
     }
     $file=Join-Path $EvidenceDirectory 'normal-switch-result.json'
@@ -221,13 +221,13 @@ try{
     (Get-Service -Name CodexifyGo).WaitForStatus('Stopped',[timespan]::FromSeconds(30))
     WriteEvent 'go_service_stopped' 'PASS'
     Start-Service -Name CodexifyGo -ErrorAction Stop
-    $pid=CheckReadiness -Image ([string]$normal.image) -Executable ([string]$pins.currentExecutable) -NotPid $initialPid -Seconds 90
-    if($pid -le 0){throw 'Normal-profile local readiness did not pass within 90 seconds'}
+    $newServicePid=CheckReadiness -Image ([string]$normal.image) -Executable ([string]$pins.currentExecutable) -NotPid $initialPid -Seconds 90
+    if($newServicePid -le 0){throw 'Normal-profile local readiness did not pass within 90 seconds'}
     WriteEvent 'new_profile_go_supervisor_worker_tunnel_healthy' 'PASS'
-    WriteStatus 'GO_NORMAL_PROFILE_VERIFIED' $pid
+    WriteStatus 'GO_NORMAL_PROFILE_VERIFIED' $newServicePid
     $switched=$false
     [pscustomobject]@{
-        status='GO_NORMAL_PROFILE_VERIFIED';servicePid=$pid
+        status='GO_NORMAL_PROFILE_VERIFIED';servicePid=$newServicePid
         previousPid=$initialPid;goSha=[string]$pins.currentSha
         normalConfigSha=[string]$normal.sha
         g11RecoveryArmed=$true;projectGroupsEnabled=$false

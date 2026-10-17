@@ -2,8 +2,22 @@
 $ErrorActionPreference='Stop'
 $scriptPath=Join-Path $PSScriptRoot 'Invoke-G11NormalProfileSwitch.ps1'
 $tokens=$null;$errors=$null
-[void][Management.Automation.Language.Parser]::ParseFile($scriptPath,[ref]$tokens,[ref]$errors)
+[void]($ast=[Management.Automation.Language.Parser]::ParseFile($scriptPath,[ref]$tokens,[ref]$errors))
 if(@($errors).Count -ne 0){throw 'G11 normal operator failed PowerShell AST'}
+$reservedPidWrites=@($ast.FindAll({
+    param($node)
+    if($node -is [Management.Automation.Language.ParameterAst]){
+        return $node.Name.VariablePath.UserPath -ieq 'PID'
+    }
+    if($node -is [Management.Automation.Language.AssignmentStatementAst] -and
+       $node.Left -is [Management.Automation.Language.VariableExpressionAst]){
+        return $node.Left.VariablePath.UserPath -ieq 'PID'
+    }
+    return $false
+},$true))
+if($reservedPidWrites.Count -gt 0){
+    throw 'Normal-profile operator must not assign or bind reserved PowerShell $PID'
+}
 $root=Join-Path $env:TEMP ('g11-normal-fixture-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $root -ErrorAction Stop|Out-Null
 function Assert([bool]$Cond,[string]$Reason){if(!$Cond){throw ('G11 normal switch fixture failed: '+$Reason)}}

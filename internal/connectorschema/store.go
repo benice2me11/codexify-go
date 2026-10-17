@@ -43,8 +43,8 @@ func Version(cfg config.Config) string {
 		// clients can suggest a connector refresh instead of reusing v2.
 		version += "+setup-v3"
 		if cfg.MCP.ProjectGroupsEnabled {
-			version += "+project-groups-v1"
-			version += "+setup-v4"
+			version += "+project-groups-v2"
+			version += "+setup-v5"
 		}
 	}
 	if cfg.ArtifactIngress.Enabled {

@@ -49,6 +49,12 @@ func (m *Manager) createManagedWorktree(identity *Identity, selected, gitRoot st
 }
 
 func (m *Manager) createManagedWorktreeAt(identity *Identity, selected, gitRoot, target string) (ManagedWorktree, error) {
+	return m.createManagedWorktreeOnBranch(identity, selected, gitRoot, target, "")
+}
+
+// createManagedWorktreeOnBranch creates an isolated checkout at a fixed commit.
+// An empty branch keeps the historical per-conversation generated branch.
+func (m *Manager) createManagedWorktreeOnBranch(identity *Identity, selected, gitRoot, target, requestedBranch string) (ManagedWorktree, error) {
 	if identity == nil {
 		return ManagedWorktree{}, errors.New("managed worktree requires conversation identity")
 	}
@@ -64,6 +70,9 @@ func (m *Manager) createManagedWorktreeAt(identity *Identity, selected, gitRoot,
 	}
 	worktreeGitRoot := filepath.Join(parent, identity.Short()+"-"+suffix)
 	branch := "codexify-go/" + identity.Short() + "-" + suffix
+	if requestedBranch != "" {
+		branch = requestedBranch
+	}
 
 	if strings.TrimSpace(target) == "" {
 		target = "HEAD"

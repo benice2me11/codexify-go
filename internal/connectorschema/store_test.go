@@ -42,7 +42,7 @@ func TestProjectGroupsSchemaVersionIsDistinctAndOptIn(t *testing.T) {
 	}
 	cfg.MCP.ProjectGroupsEnabled = true
 	groupVersion := Version(cfg)
-	if groupVersion == legacy || !strings.Contains(groupVersion, "+project-groups-v1") {
+	if groupVersion == legacy || !strings.Contains(groupVersion, "+project-groups-v2") {
 		t.Fatalf("group schema needs a distinct marker: legacy=%q group=%q", legacy, groupVersion)
 	}
 	cfg.ArtifactIngress.Enabled = true

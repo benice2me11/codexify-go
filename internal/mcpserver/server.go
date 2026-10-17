@@ -150,7 +150,7 @@ func NewWithToken(cfg config.Config, logger *slog.Logger, token string) (*Runtim
 	}
 	instructions := "Select a workspace before project work in multi-project mode, then call get_agent_brief once and follow the returned environment, saved state, skills, and AGENTS.md instructions. Connector version marker: " + schemaVersion
 	if cfg.MCP.ProjectGroupsEnabled {
-		instructions += " Project Groups are enabled: call list_project_groups and set_project_group for one conversation spanning several configured Git repositories. Tools with an optional repository alias route only that call; set_active_repository changes the implicit default. Always inspect the effective checkout identity before mutations. Shell commands use normal OS account permissions and are not sandboxed."
+		instructions += " Project Groups are enabled: select a group once, then route each operation using its repository alias without changing the active default. The primary/active repository is only a fallback for calls without an explicit alias. Inspect each target's Git state before mutations. For new tasks, fetch the intended remote first and use prepare_repository_task(repository, branch, baseRef) to create an isolated feature worktree from a remote-tracking commit; this preserves dirty and outdated source checkouts. Never reset, checkout, pull, stash, force-push or merge source/main implicitly. Each repository needs independent tests, commits and PRs. Arbitrary shell commands are not sandboxed."
 	}
 	if cfg.AgentChat.Enabled {
 		instructions += " Markdown chat is enabled: use chat_write for user-facing Markdown chat messages, chat_read for new CHAT.md user text, and chat_await as the idle state; do not treat chat_write/chat_read as terminal actions."
@@ -599,6 +599,26 @@ func (r *Runtime) registerTools() {
 			return nil, selection, nil
 		})
 		mcp.AddTool(r.server, &mcp.Tool{
+			Name:        "prepare_repository_task",
+			Description: "Start a new task in one project-group repository without switching the group default: create a named feature branch and independent managed worktree from a verified remote-tracking baseRef (for example origin/main). Never changes source checkout files/branch or resets uncommitted work. Fetch the chosen remote using exec_command before calling, since this operation does not fetch or merge. Rejects existing managed tasks rather than replacing them.",
+		}, func(_ context.Context, req *mcp.CallToolRequest, in PrepareRepositoryTaskInput) (*mcp.CallToolResult, projects.RepositoryTaskOutput, error) {
+			selection, err := r.projects.PrepareRepositoryTask(r.requestMeta(req), in.Repository, in.Branch, in.BaseRef)
+			if err != nil {
+				return nil, projects.RepositoryTaskOutput{}, err
+			}
+			if err := r.diff.Ensure(selection.WorktreeRoot, r.diffOwner(req)); err != nil {
+				return nil, selection, fmt.Errorf("worktree prepared, but diff baseline initialization failed: %w", err)
+			}
+			return nil, selection, nil
+		})
+		mcp.AddTool(r.server, &mcp.Tool{
+			Name:        "finish_repository_task",
+			Description: "Explicitly finish a project-group managed task only AFTER switching that member back to source. Requires a clean preserved worktree and proof that its HEAD is an ancestor of the chosen remote-tracking baseRef (fetch first). Releases its checkout binding, removes the clean worktree without --force, and keeps the feature branch. Never auto-cleans dirty or squash-merged tasks.",
+		}, func(_ context.Context, req *mcp.CallToolRequest, in FinishRepositoryTaskInput) (*mcp.CallToolResult, projects.RepositoryTaskFinishOutput, error) {
+			finished, err := r.projects.FinishRepositoryTask(r.requestMeta(req), in.Repository, in.BaseRef)
+			return nil, finished, err
+		})
+		mcp.AddTool(r.server, &mcp.Tool{
 			Meta:        ui.AppCallableToolMeta(),
 			Name:        "get_project_group_status",
 			Description: "Return the selected group's aliases, source and active checkout roots, checkout modes, active default and generation.",
@@ -1032,7 +1052,15 @@ func (r *Runtime) registerUIResources() {
 			description string
 			html        string
 		}{ui.GroupSetupURI, "codexify-go-group-setup", "Codexify Go group setup",
-			"Project Groups, member routing and checkout selection.", ui.SetupHTML})
+			"Compact Project Groups setup, model-first routing and checkout selection.", ui.SetupHTML},
+			struct {
+				uri         string
+				name        string
+				title       string
+				description string
+				html        string
+			}{ui.LegacyGroupSetupURI, "codexify-go-group-setup-legacy", "Codexify Go group setup (legacy)",
+				"Compatible resource for already mounted v4 group Setup cards.", ui.SetupHTML})
 	}
 	for _, item := range resources {
 		item := item
@@ -1101,6 +1129,17 @@ type SetRepositoryCheckoutInput struct {
 	UIContext  string `json:"uiContext,omitempty" jsonschema:"opaque context supplied by the workspace card; omit for model calls"`
 	Repository string `json:"repository" jsonschema:"existing group member alias"`
 	Checkout   string `json:"checkout" jsonschema:"source or managed checkout kind"`
+}
+
+type PrepareRepositoryTaskInput struct {
+	Repository string `json:"repository" jsonschema:"project-group alias: work, hh, habr or another configured member"`
+	Branch     string `json:"branch" jsonschema:"new non-protected feature branch, such as feat/fix-vacancy-search"`
+	BaseRef    string `json:"baseRef" jsonschema:"explicit remote-tracking branch to start from, e.g. origin/main or origin/master; fetch first"`
+}
+
+type FinishRepositoryTaskInput struct {
+	Repository string `json:"repository" jsonschema:"project-group repository alias whose preserved managed worktree should be cleaned"`
+	BaseRef    string `json:"baseRef" jsonschema:"verified up-to-date remote-tracking branch containing every feature commit, e.g. origin/main"`
 }
 
 type GetProjectGroupStatusInput struct {
@@ -1566,6 +1605,13 @@ func (r *Runtime) agentBrief(req *mcp.CallToolRequest, repository string) (strin
 	sections = append(sections, fmt.Sprintf("## Environment\n\n- Platform: %s/%s\n- User: %s\n- Active workspace: %s\n- Access root: %s\n- Workspace mode: %s\n- Managed worktree: %t\n- Binding scope: %s",
 		runtime.GOOS, runtime.GOARCH, username, root.Path(), selection.AccessRoot, selection.Mode, selection.ManagedWorktree, selection.BindingScope))
 	if selection.Mode == "group" {
+		sections = append(sections, "## Multi-repository Git workflow\n\nChoose the target repository alias per operation; do not call set_active_repository unless the user explicitly wants a new default. Before editing, inspect git_status and check source/upstream. For a new task, run git fetch <remote> in the intended repository, then prepare_repository_task with that alias, a new feature branch and a remote-tracking baseRef. A dirty or behind source checkout must remain untouched. Keep commits and PRs independent for each member. Do not auto-merge or delete worktrees; complete tests, review and explicit integration first.")
+		var members []string
+		for _, member := range selection.Repositories {
+			members = append(members, fmt.Sprintf("- %s -> %s (%s checkout)",
+				member.Alias, filepath.Base(member.SourceProjectRoot), member.Checkout))
+		}
+		sections = append(sections, "## Group repository aliases\n\n"+strings.Join(members, "\n"))
 		sections = append(sections, fmt.Sprintf("## Project group\n\n- Group: %s\n- Primary: %s\n- Active default: %s\n- Effective repository for this brief: %s\n- Source checkout: %s\n- Effective checkout: %s\n\nExplicit repository arguments route only that call and never change the active default. AGENTS.md and repository-specific state below belong to the effective repository; group chat lives with the primary checkout. Arbitrary shell commands run with the current OS user's permissions, not in a filesystem sandbox.",
 			selection.GroupName, selection.PrimaryRepository, selection.ActiveRepository,
 			selection.EffectiveRepository, selection.SourceProjectRoot, selection.ProjectRoot))
@@ -1628,7 +1674,7 @@ func builtInToolNames() map[string]struct{} {
 		"chat_read", "chat_write", "chat_await", "self_update_status",
 		"setup", "list_projects", "set_project_root", "setup_ui_switch_project", "setup_status", "list_worktrees", "get_environment",
 		"list_project_groups", "set_project_group", "set_active_repository", "get_project_group_status",
-		"set_repository_checkout",
+		"set_repository_checkout", "prepare_repository_task", "finish_repository_task",
 		"recall", "remember", "update_memory_note", "forget_memory_note", "skills_list", "skills_read",
 		"export_host_file", "import_host_file",
 		"read_file", "write_file", "apply_patch", "glob", "grep", "exec_command", "write_stdin",

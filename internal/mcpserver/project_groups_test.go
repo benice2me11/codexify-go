@@ -168,7 +168,7 @@ func TestProjectGroupEndToEndRoutingAcrossThreeRepos(t *testing.T) {
 	for _, tool := range listed.Tools {
 		tools[tool.Name] = true
 	}
-	for _, required := range []string{"list_project_groups", "set_project_group", "get_project_group_status", "set_active_repository", "read_file", "write_file", "glob", "grep", "apply_patch", "exec_command", "write_stdin", "git_status", "git_diff", "git_log", "show_diff", "list_worktrees"} {
+	for _, required := range []string{"list_project_groups", "set_project_group", "get_project_group_status", "set_active_repository", "prepare_repository_task", "finish_repository_task", "read_file", "write_file", "glob", "grep", "apply_patch", "exec_command", "write_stdin", "git_status", "git_diff", "git_log", "show_diff", "list_worktrees"} {
 		if !tools[required] {
 			t.Fatalf("missing required Project Groups MCP tool %s", required)
 		}
@@ -305,6 +305,56 @@ func TestProjectGroupEndToEndRoutingAcrossThreeRepos(t *testing.T) {
 		t.Fatalf("member memory scopes crossed: hh=%+v habr=%+v", hhMemory, habrMemory)
 	}
 	pgExpectError(t, f, "set_project_root", map[string]any{"path": "hh-mcp-server", "createWorktree": false})
+}
+
+func TestProjectGroupModelFirstTaskToolPreservesDefaultAndSource(t *testing.T) {
+	f := newPGFixture(t)
+	pgCall(t, f, "set_project_group", map[string]any{"name": "job-search"})
+	brief := pgValue(t, pgCall(t, f, "get_agent_brief", map[string]any{"repository": "habr"}))
+	for _, required := range []string{"work -> work-search", "hh -> hh-mcp-server", "habr -> habr-career-mcp"} {
+		if !strings.Contains(fmt.Sprint(brief), required) {
+			t.Fatalf("model-first brief omitted alias mapping %q: %+v", required, brief)
+		}
+	}
+	runTestGit(t, f.paths["hh"], "update-ref", "refs/remotes/origin/master", "HEAD")
+	runTestGit(t, f.paths["habr"], "update-ref", "refs/remotes/origin/master", "HEAD")
+	sourceDirty := filepath.Join(f.paths["hh"], "README.md")
+	if err := os.WriteFile(sourceDirty, []byte("source-uncommitted\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prepared := pgValue(t, pgCall(t, f, "prepare_repository_task", map[string]any{
+		"repository": "hh", "branch": "fix/hh-api", "baseRef": "origin/master",
+	}))
+	if prepared["repository"] != "hh" || prepared["branch"] != "fix/hh-api" ||
+		prepared["sourceDirty"] != true {
+		t.Fatalf("task preparation lost source state: %+v", prepared)
+	}
+	if body, err := os.ReadFile(sourceDirty); err != nil || string(body) != "source-uncommitted\n" {
+		t.Fatalf("task modified source checkout: %q %v", body, err)
+	}
+	hh := pgValue(t, pgCall(t, f, "get_environment", map[string]any{"repository": "hh"}))
+	if hh["managedWorktree"] != true || hh["activeRepository"] != "work" {
+		t.Fatalf("feature worktree changed active default: %+v", hh)
+	}
+	pgCall(t, f, "write_file", map[string]any{
+		"repository": "hh", "path": "api-branch.txt", "content": "HH feature\n",
+	})
+	if _, err := os.Stat(filepath.Join(f.paths["hh"], "api-branch.txt")); !os.IsNotExist(err) {
+		t.Fatalf("member tool leaked changes to HH source: %v", err)
+	}
+	habr := pgValue(t, pgCall(t, f, "prepare_repository_task", map[string]any{
+		"repository": "habr", "branch": "test/habr-compat", "baseRef": "origin/master",
+	}))
+	if habr["repository"] != "habr" {
+		t.Fatalf("habr task not created: %+v", habr)
+	}
+	after := pgValue(t, pgCall(t, f, "get_project_group_status", map[string]any{}))
+	if after["activeRepository"] != "work" {
+		t.Fatalf("model-first task operations changed group default: %+v", after)
+	}
+	pgExpectError(t, f, "prepare_repository_task", map[string]any{
+		"repository": "hh", "branch": "fix/another-task", "baseRef": "origin/master",
+	})
 }
 
 func TestProjectGroupShellSessionCannotCrossConversationsOrMembers(t *testing.T) {
@@ -619,7 +669,7 @@ func TestProjectGroupCheckoutRevisionRevokesOldArtifactAndExecSession(t *testing
 	})
 }
 
-func TestProjectGroupSetupV4ResourceAndUIContext(t *testing.T) {
+func TestProjectGroupSetupV5ResourceAndUIContext(t *testing.T) {
 	f := newPGFixture(t)
 	setup := pgCall(t, f, "setup", map[string]any{})
 	status := pgValue(t, pgCall(t, f, "setup_status", map[string]any{}))
@@ -633,7 +683,10 @@ func TestProjectGroupSetupV4ResourceAndUIContext(t *testing.T) {
 		t.Fatal("group connector version is empty")
 	}
 	if _, err := f.session.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: ui.GroupSetupURI}); err != nil {
-		t.Fatalf("v4 setup resource unavailable: %v", err)
+		t.Fatalf("v5 setup resource unavailable: %v", err)
+	}
+	if _, err := f.session.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: ui.LegacyGroupSetupURI}); err != nil {
+		t.Fatalf("legacy v4 group setup resource unavailable: %v", err)
 	}
 	if _, err := f.session.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: ui.SetupURI}); err != nil {
 		t.Fatalf("legacy v3 setup resource compatibility failed: %v", err)

@@ -19,9 +19,12 @@ const (
 )
 
 type GroupBindingRepository struct {
-	Alias                       string `json:"alias"`
-	SourceProjectRoot           string `json:"sourceProjectRoot"`
-	ProjectRoot                 string `json:"projectRoot"`
+	Alias             string `json:"alias"`
+	SourceProjectRoot string `json:"sourceProjectRoot"`
+	ProjectRoot       string `json:"projectRoot"`
+	// Derived for Setup/status only; not used as checkout identity.
+	SourceBranch                string `json:"sourceBranch,omitempty"`
+	Branch                      string `json:"branch,omitempty"`
 	Checkout                    string `json:"checkout"`
 	ManagedWorktree             bool   `json:"managedWorktree"`
 	WorktreeGitRoot             string `json:"worktreeGitRoot,omitempty"`

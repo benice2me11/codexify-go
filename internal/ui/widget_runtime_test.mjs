@@ -50,9 +50,9 @@ function host(html, options = {}) {
   let previousWorkspace = null, awaitingSelection = false;
   const fixtureGroups = [{
     name:'job-search',primary:'work',repositories:[
-      {alias:'work',project:'work-search',checkout:'source',sourceProjectRoot:'C:\\fixture\\work'},
-      {alias:'hh',project:'hh-mcp-server',checkout:'source',sourceProjectRoot:'C:\\fixture\\hh'},
-      {alias:'habr',project:'habr-career-mcp',checkout:'source',sourceProjectRoot:'C:\\fixture\\habr'},
+      {alias:'work',project:'work-search',checkout:'source',sourceBranch:'main',sourceProjectRoot:'C:\\fixture\\work'},
+      {alias:'hh',project:'hh-mcp-server',checkout:'source',sourceBranch:'master',sourceProjectRoot:'C:\\fixture\\hh'},
+      {alias:'habr',project:'habr-career-mcp',checkout:'source',sourceBranch:'master',sourceProjectRoot:'C:\\fixture\\habr'},
     ],
   }];
   const sourcePath = alias => 'C:\\fixture\\'+alias;
@@ -95,6 +95,8 @@ function host(html, options = {}) {
               const checkout=params.checkouts?.[member.alias]||member.checkout;
               return {alias:member.alias,checkout,sourceProjectRoot:sourcePath(member.alias),
                 projectRoot:checkout==='managed'?managedPath(member.alias):sourcePath(member.alias),
+                sourceBranch:member.sourceBranch,
+                branch:checkout==='managed'?'codex/fixture-'+member.alias:member.sourceBranch,
                 managedWorktree:checkout==='managed',checkoutRevision:1};
             })};
           updateGroupActiveRoot();awaitingSelection=false;data=currentWorkspace;
@@ -118,6 +120,7 @@ function host(html, options = {}) {
               member.preservedManagedProjectRoot='';
             }
             member.managedWorktree=params.checkout==='managed';member.checkout=params.checkout;
+            member.branch=params.checkout==='managed'?'codex/fixture-'+member.alias:member.sourceBranch;
             member.checkoutRevision++;currentWorkspace.generation++;
             updateGroupActiveRoot();
           }
@@ -290,7 +293,8 @@ if (!baseline) {
   assert.equal(tool(shared,'set_project_root').length,1,'source rapid clicks duplicated mutation');
   assert.equal(tool(shared,'set_project_root')[0].params.createWorktree,false,'must pass boolean false');
   assert.ok(shared.elements.get('status').innerHTML.includes('Source checkout'));
-  assert.ok(shared.elements.get('status').innerHTML.includes('Source:'));
+  assert.ok(shared.elements.get('advanced-info').textContent.includes('Source:'),'technical paths belong in Advanced');
+  assert.equal(shared.elements.get('status').innerHTML.includes('C:\\fixture'),false,'selected summary must not expose an absolute path');
 
   const managed=host(setup,{initialWorkspace:null,initialOutput:unboundPayload,initialMetadata:setupMeta});
   await settle();
@@ -309,7 +313,7 @@ if (!baseline) {
   assert.equal(swapped.elements.get('projects').children.length,0,'selected workspace should hide picker');
   swapped.click('switch');
   await settle();
-  assert.ok(swapped.elements.get('status').textContent.includes('Previous source files'),'old worktree preservation notice missing');
+  assert.ok(swapped.elements.get('status').innerHTML.includes('Previous source files'),'old worktree preservation notice missing');
   choose(swapped).onclick();
   await settle();
   assert.equal(tool(swapped,'set_project_root')[0].params.createWorktree,false);
@@ -359,12 +363,13 @@ if (!baseline) {
   await settle();
   assert.equal(group.calls.length,0,'group setup card should render host payload without calls');
   assert.equal(group.elements.get('groups-wrap').hidden,false);
+  assert.equal(group.elements.get('workspace-kind').value,'group','configured groups should be discoverable by default');
   const groupCard=group.elements.get('groups').children[0];
   assert.ok(groupCard,'group option must exist');
-  const initialHHMode=groupCard.children[3].children[1];
+  const initialHHMode=group.elements.get('group-settings').children[0].children[2].children[1];
   assert.equal(initialHHMode.value,'source');
   initialHHMode.value='managed';initialHHMode.onchange();
-  const selectGroup=groupCard.children.at(-1);
+  const selectGroup=groupCard.children[0].children.at(-1);
   for(let i=0;i<20;i++)if(!selectGroup.disabled)selectGroup.onclick();
   await settle();
   assert.equal(tool(group,'set_project_group').length,1,'rapid group clicks created duplicate bindings');
@@ -372,7 +377,13 @@ if (!baseline) {
   assert.equal(tool(group,'set_project_group')[0].params.checkouts.hh,'managed','initial member checkout not forwarded');
   assert.equal(tool(group,'set_project_group')[0].params.checkouts.habr,'source');
   assert.equal(tool(group,'set_project_group')[0].params.uiContext,setupToken);
-  assert.ok(group.elements.get('status').innerHTML.includes('Group:'));
+  assert.ok(group.elements.get('status').innerHTML.includes('job-search'));
+  assert.equal(group.elements.get('compact-members').children.length,3,'compact view must list the repositories');
+  assert.equal(group.elements.get('compact-members').children[1].children[0].textContent,'hh-mcp-server');
+  assert.equal(group.elements.get('compact-members').children[1].children[1].textContent,'Managed · codex/fixture-hh');
+  assert.equal(group.elements.get('compact-members').children[0].children[1].textContent,'Source · main');
+  assert.equal(group.elements.get('status').innerHTML.includes('C:\\fixture'),false,'paths must not appear in main group card');
+  assert.ok(group.elements.get('advanced-info').textContent.includes('C:\\fixture'),'advanced must keep source and active identities');
   assert.equal(group.elements.get('members').children.length,4,'must render 3 independently managed members');
   assert.equal(group.elements.get('mode-row').hidden,true,'single workspace mode picker should not appear for group');
 
@@ -387,8 +398,7 @@ if (!baseline) {
   await settle();
   assert.equal(tool(group,'set_active_repository').length,1);
   assert.equal(tool(group,'set_active_repository')[0].params.repository,'hh');
-  assert.ok(group.elements.get('status').innerHTML.includes('Active repository:'));
-  assert.ok(group.elements.get('status').innerHTML.includes('hh'));
+  assert.ok(group.elements.get('advanced-info').textContent.includes('hh'),'active default belongs in Advanced');
   const hhActive=memberControls(group,1);
   hhActive.children[2].value='source';
   hhActive.children[3].onclick();
@@ -415,14 +425,14 @@ if (!baseline) {
   });
   await settle();
   assert.ok(staleGroup.elements.get('schema-warning').textContent.includes('Refresh/reconnect'));
-  const staleChoose=staleGroup.elements.get('groups').children[0].children.at(-1);
+  const staleChoose=staleGroup.elements.get('groups').children[0].children[0].children.at(-1);
   assert.equal(staleChoose.disabled,true,'stale connector must disable group selection');
   const staleCount=staleGroup.calls.length;
   staleChoose.onclick();
   await settle();
   assert.equal(staleGroup.calls.length,staleCount,'stale group selection should not call tools');
 
-  results.push({name:'ProjectGroupsSetupV4',selection:'three members',active:'member alias',checkout:'managed → source → managed',stale:'blocked',duplicateCalls:0});
+  results.push({name:'ProjectGroupsSetupV5',selection:'three members',active:'member alias',checkout:'managed → source → managed',stale:'blocked',duplicateCalls:0});
 }
 
 console.log(JSON.stringify({mode:baseline?'bounded-original-reproduction':'regression',host:'synthetic; no hosted MCP calls',results},null,2));

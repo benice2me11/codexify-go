@@ -167,6 +167,9 @@ func (m *Manager) Status(meta map[string]any) (StatusInfo, error) {
 	}
 	if binding != nil {
 		info := infoFromBinding(m, *binding, false)
+		if info.Mode == "group" {
+			m.decorateGroupStatus(&info)
+		}
 		status.Selected = true
 		status.Workspace = &info
 	}
